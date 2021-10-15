@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test</title>
+</head>
+<body>
+
+    <button onclick="beginTest()">Begin Test</button>
+    <button onclick="wake()">Wake</button>
+    <button onclick="hardWake()">Fetch Wake</button>
+    
+    <div id="messages">
+        
+    </div>
+    
+<script>
+//@ts-check
+    
+// Create WebSocket connection.
+const socket = new WebSocket(`ws://${location.host}`);
+
+// Connection opened
+socket.addEventListener('open', function (event) {
+    console.log('Connected To server');
+});
+
+// Listen for messages
+const messages = document.getElementById('messages');
+socket.addEventListener('message', function (event) {
+    const msg = event.data;
+    const date = new Date();
+    messages.innerHTML += `${date}: ${msg} <br />`;
+});
+
+function beginTest(){
+    socket.send('test');
+    console.log("Send test request");
+}
+
+function wake(){
+    socket.send('wake');
+    console.log("Send wake request");
+}
+function hardWake(){
+    console.log('Sending Hard Wake Fetch request');
+    fetch(`${location.origin}/test/t.txt`)
+    .then(response => response.text())
+    .then(text => console.log("Fetch Result: ", text))
+    .catch(err => console.log("Cought error: ", err));
+}
+    
+</script>
+    
+</body>
+</html>

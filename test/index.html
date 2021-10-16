@@ -5,12 +5,28 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Test</title>
+    
+    <style>
+        input[type=text]{
+            display: block;
+            width: 95%;
+        }
+    </style>
+    
 </head>
 <body>
 
     <button onclick="beginTest()">Begin Test</button>
     <button onclick="wake()">Wake</button>
     <button onclick="hardWake()">Fetch Wake</button>
+    
+    <br />
+    
+    Device ID: <input type="text" id="device_id" />
+    Thermometers IDs: <input type="text" id="thermometers_ids" />
+    Measures: <input type="text" id="measures" />
+     <br />
+    <button onclick="postNewTemperatures()">Post New Temperatures</button>
     
     <div id="messages">
         
@@ -20,20 +36,41 @@
 //@ts-check
     
 // Create WebSocket connection.
-const socket = new WebSocket(`ws://${location.host}`);
 
-// Connection opened
-socket.addEventListener('open', function (event) {
-    console.log('Connected To server');
-});
-
-// Listen for messages
 const messages = document.getElementById('messages');
-socket.addEventListener('message', function (event) {
-    const msg = event.data;
-    const date = new Date();
-    messages.innerHTML += `${date}: ${msg} <br />`;
-});
+
+const is_https = location.protocol === 'https:';
+let heartbeat_message = '/';
+let heartbeat_delay = 20 * 1000;
+function createSocket(address){
+    let socket = new WebSocket(address);
+    
+    function sendHeartbeat(){
+        if(socket.readyState !== socket.OPEN){
+            console.log("Cannot send heartbeat, socket not OPEN");
+            return;
+        }
+        socket.send(heartbeat_message);
+        setTimeout(sendHeartbeat, heartbeat_delay);
+    }
+    
+    // Connection opened
+    socket.addEventListener('open', function (event) {
+        console.log('Connected To server');
+        sendHeartbeat();
+    });
+
+    // Listen for messages
+    socket.addEventListener('message', function (event) {
+        const msg = event.data;
+        const date = new Date();
+        messages.innerHTML += `${date}: ${msg} <br />`;
+    });
+    
+    return socket;
+}
+const websocketOriginEndpoint = `${is_https ? 'wss' : 'ws'}://${location.host}`;
+let socket = createSocket(websocketOriginEndpoint);
 
 function beginTest(){
     socket.send('test');
@@ -51,7 +88,50 @@ function hardWake(){
     .then(text => console.log("Fetch Result: ", text))
     .catch(err => console.log("Cought error: ", err));
 }
+
+function parsePostNewTemperaturesRequest(){
+    const device_id = parseInt(document.getElementById('device_id').value);
+    const thermometers_ids = document.getElementById('thermometers_ids').value.split(',').map(x => parseInt(x));
+    const measures = document.getElementById('measures').value.split(/[;,]/g).map(x => parseInt(x));
+    const thermometers_count = thermometers_ids.length;
+    const measures_count = measures.length / thermometers_count;
     
+    const obj = {
+        device_id,
+        thermometers_count,
+        measures_count,
+        thermometers_ids,
+        measures
+    };
+    
+    console.log(`Sending Post New Temperatures Request:`, obj);
+    
+    const buffer = new ArrayBuffer(1+12+thermometers_count*8+measures_count*thermometers_count*2);
+    const view = new DataView(buffer);
+    
+    view.setUint8(0, 10);
+    view.setUint32(1, device_id, true);
+    view.setUint32(1+4, thermometers_count, true);
+    view.setUint32(1+8, measures_count, true);
+    
+    for(let i=0; i<thermometers_count; i++){
+        view.setBigUint64(1+12+i*8, BigInt(thermometers_ids[i]), true);
+    }
+    for(let i=0; i<measures_count*thermometers_count; i++){
+        view.setInt16(1+12+thermometers_count*8+i*2, measures[i], true);
+    }
+    
+    console.log("Buffer: ", buffer);
+    
+    return {obj, buffer};
+}
+
+function postNewTemperatures(){
+    const {obj, buffer} = parsePostNewTemperaturesRequest();
+    
+    socket.send(buffer);
+}
+
 </script>
     
 </body>

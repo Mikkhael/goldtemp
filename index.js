@@ -1,4 +1,5 @@
 //@ts-check
+require('dotenv').config();
 const express = require('express');
 const app = express();
 const server = require('http').createServer(app);
@@ -19,6 +20,7 @@ class DBManager{
             user: DB_CRED.USER,
             supportBigNumbers: true,
         };
+        
         if(DB_CRED.PASS){
             this.default_connection_params.password = DB_CRED.PASS;
         }

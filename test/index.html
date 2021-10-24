@@ -11,6 +11,10 @@
             display: block;
             width: 95%;
         }
+        
+        #last_measurements{
+            color: red;
+        }
     </style>
     
 </head>
@@ -27,6 +31,11 @@
     Measures: <input type="text" id="measures" />
      <br />
     <button onclick="postNewTemperatures()">Post New Temperatures</button>
+    <button onclick="getLastMeasurements()">Get Last Measurements</button>
+    
+    <div id="last_measurements">
+        
+    </div>
     
     <div id="messages">
         
@@ -64,7 +73,17 @@ function createSocket(address){
     socket.addEventListener('message', function (event) {
         const msg = event.data;
         const date = new Date();
-        messages.innerHTML += `${date}: ${msg} <br />`;
+        if(msg instanceof Blob){
+            msg.arrayBuffer().then(buffer => {
+                console.log(new Uint8Array(buffer));
+                let view = new DataView(buffer);
+                if(view.getUint8(0) == 20){
+                    handleLastMeasurements(view);
+                }
+            })
+        }else{
+            messages.innerHTML += `${date}: ${msg} <br />`;
+        }
     });
     
     return socket;
@@ -87,6 +106,22 @@ function hardWake(){
     .then(response => response.text())
     .then(text => console.log("Fetch Result: ", text))
     .catch(err => console.log("Cought error: ", err));
+}
+
+function handleLastMeasurements(view){
+    const count = view.getUint32(1, true);
+    const result = [];
+    for(let i=0; i<count; i++){
+        const record = {};
+        record.time = new Date( Number(view.getBigUint64(5 + i*8, true)) );
+        record.id   = view.getBigUint64(5 + count*8 + i*8, true);
+        record.value  = Math.round(view.getUint16(5 + count*16 + i*2, true) / 128 * 100) / 100;
+        result.push(record);
+    }
+    
+    document.getElementById(`last_measurements`).innerHTML = result.map(
+        x => `${x.time} | ${x.id} : ${x.value}°C`
+    ).join('<br />');
 }
 
 function parsePostNewTemperaturesRequest(){
@@ -130,6 +165,10 @@ function postNewTemperatures(){
     const {obj, buffer} = parsePostNewTemperaturesRequest();
     
     socket.send(buffer);
+}
+
+function getLastMeasurements(){
+    socket.send(new Uint8Array([20]));
 }
 
 </script>

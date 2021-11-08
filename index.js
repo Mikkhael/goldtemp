@@ -8,6 +8,9 @@ const mysql = require('mysql2');
 
 const PORT = process.env.PORT || 8080;
 
+
+function raw_to_c(raw){ return raw / 128; }
+
 // MYSQL
 
 const DB_CRED = require('./db_credentials');
@@ -181,6 +184,12 @@ Object.freeze(RequestTypes);
  * @param {Boolean} isBinary 
  */
 function handleMessage(ws, data, isBinary){
+    const msg = data.toString();
+    if(isBinary === false && msg.startsWith("echo")){
+        console.log(`Received ECHO: ${msg}`);
+        ws.send(msg);
+        return;
+    }
     const request_type = data.readUInt8(0);
     switch(request_type){
         case RequestTypes.PostNewTemperatures: {
@@ -227,9 +236,11 @@ function handlePostNewTemperatures(ws, data){
     for(let i=0; i<measurements_count*thermometers_count; i++){
         measurements.push(data.readInt16LE(12+thermometers_count*8+i*2));
     }
+    const measurements_c = measurements.map(x => raw_to_c(x));
     console.log(`Received Post New Temperatures Request 2:`, {
         thermometers_ids,
-        measurements
+        measurements,
+        measurements_c
     });
     
     const times = new Array(measurements_count).fill(new Date());
@@ -253,7 +264,7 @@ function handleGetLastMeasurements(ws){
         buffer.writeUInt32LE(count, 1);
         for(let i=0; i<count; i++){
             buffer.writeBigInt64LE(BigInt(new Date(result[i].time).getTime()), 5 + i*8);
-            buffer.writeBigInt64LE(BigInt(result[i].id), 5 + (count + i)*8);
+            buffer.writeBigUInt64LE(BigInt(result[i].id), 5 + (count + i)*8);
             buffer.writeInt16LE(result[i].value, 5 + count*16 + i*2);
         }
         ws.send(buffer);
@@ -274,6 +285,10 @@ wss.on('connection', function(ws, req) {
     })
     ws.on('message', function(data, isBinary){
         if(data.toString() === '/'){ // HeartBeat
+            return;
+        }
+        if(data.toString().length == 0){
+            console.log(`Empty Buffer`);
             return;
         }
         console.log('Received Message: ', data, isBinary ? "" : data.toString());

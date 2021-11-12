@@ -29,9 +29,14 @@
     Device ID: <input type="text" id="device_id" />
     Thermometers IDs: <input type="text" id="thermometers_ids" />
     Measures: <input type="text" id="measures" />
+    New Interval: <input type="text" id="new_interval" />
      <br />
     <button onclick="postNewTemperatures()">Post New Temperatures</button>
     <button onclick="getLastMeasurements()">Get Last Measurements</button>
+    <button onclick="setNewSampleInterval()">Set New Sample Interval</button>
+    
+    <br />
+    
     
     <div id="last_measurements">
         
@@ -169,6 +174,16 @@ function postNewTemperatures(){
 
 function getLastMeasurements(){
     socket.send(new Uint8Array([20]));
+}
+
+function setNewSampleInterval(){
+    const value = BigInt(+document.getElementById("new_interval").value || 0);
+    console.log("Setting new interval to: ", value);
+    const buffer = new ArrayBuffer(9);
+    const view = new DataView(buffer);
+    view.setUint8(0, 30);
+    view.setBigUint64(1, value, true);
+    socket.send(buffer);
 }
 
 </script>

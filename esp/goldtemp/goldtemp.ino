@@ -11,14 +11,14 @@
 constexpr int  MAX_DEVICES = 20;
 constexpr int  ONE_WIRE_BUS = D1;
 
-//
-//constexpr char CRED_SSID[] =  "TP-LINK_FD2F53";
-//constexpr char CRED_PASS[] = "42936961";
-//constexpr char WS_HOST[] = "192.168.0.101";
-constexpr char CRED_SSID[] =  "👌";
-constexpr char CRED_PASS[] = "qwertyui";
 
-constexpr char WS_HOST[] = "192.168.43.111";
+constexpr char CRED_SSID[] =  "TP-LINK_FD2F53";
+constexpr char CRED_PASS[] = "42936961";
+//constexpr char CRED_SSID[] =  "👌";
+//constexpr char CRED_PASS[] = "qwertyui";
+
+constexpr char WS_HOST[] = "192.168.0.101";
+//constexpr char WS_HOST[] = "192.168.43.111";
 constexpr int  WS_PORT = 8080;
 constexpr char WS_URL[] = "/";
 constexpr int  WS_HB_INTERVAL = 1000 * 15;
@@ -99,14 +99,21 @@ uint64_t addressToUint(const DeviceAddress deviceAddress)
 }
 
 //// WebSockets ////////////////////
+void set_new_measurement_interval(const uint64_t);
+
 WebSocketsClient ws;
+bool ws_was_connected = false;
 void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
   switch(type) {
     case WStype_DISCONNECTED:{
-      logln("[WSc] Disconnected!");
+      if(ws_was_connected){
+        logln("[WSc] Disconnected!");
+        ws_was_connected = false;
+      }
       break;
     }
     case WStype_CONNECTED: {
+      ws_was_connected = true;
       logln("[WSc] Connected to url: ", String((char*)payload));
       ws.sendTXT("Connected");
       break;
@@ -119,8 +126,13 @@ void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
       break;
     }
     case WStype_BIN:{
-      logln("[WSc] get binary length: ", length);
-      ws.sendBIN(payload, length);
+//      logln("[WSc] get binary length: ", length);
+//      ws.sendBIN(payload, length);
+      if(payload[0] == 30 && length == 9){
+        uint64_t new_interval;
+        memcpy(&new_interval, payload+1, 8);
+        set_new_measurement_interval(new_interval);
+      }
       break;
     }
     case WStype_PING:{
@@ -415,6 +427,11 @@ struct IntervalExecution
     interval = new_interval;
   }
 
+  void execute_now(){
+      counter = millis();
+      handler();
+  }
+
   bool operator()(){
     if(interval == 0){
       return false;
@@ -446,8 +463,13 @@ IntervalExecution measurement_routine_interval([]{
     logp("Measurement routine failed! ");
   }
   auto t2 = millis();
-  logln(t2-t1, '\t', t1, '\t', t2);
+  logln("(", t2-t1, "ms)");
 }, 0);
+
+void set_new_measurement_interval(const uint64_t new_interval){
+  measurement_routine_interval.update_interval(new_interval);
+  logln("Changed Measurement Sample Interval to ", new_interval, "ms.");
+}
 
 void loop(void)
 {
@@ -463,9 +485,7 @@ void loop(void)
     }else if(command == "get"){
       getAllTemperatures();
     }else if(command == "z"){
-      rescan_devices_with_log();
-      request_temperatures();
-      getAllTemperatures();
+      measurement_routine_interval.execute_now();
     }else if(command == "print"){
       measurements.print();
     }else if(command == "send"){

@@ -1,0 +1,34 @@
+<html><body>
+<div id="D"></div>
+<input type="button" value="X" onclick="e()">
+<script>
+k={};
+function r(){
+    fetch("./r").then(x=>x.text()).then(x=>{
+        console.log(x);
+        s(x.split(',').filter(y=>y.length>0));
+        setTimeout(r, 3000);
+    }).catch(err=>{
+        console.log(err);
+        setTimeout(r, 3000);
+    })
+}
+const D = document.getElementById("D");
+function s(xs){
+    for(let i in k){
+        k[i] = false;
+    }
+    for(let x of xs){
+        k[x] = true;
+    }
+    e();
+    for(let i in k){
+        D.innerHTML += `<p style="color:${k[i]?"black":"grey"}">${i}</p>`;
+    }
+}
+function e(){
+    D.innerHTML = "";
+}
+r();
+</script>
+</body></html>

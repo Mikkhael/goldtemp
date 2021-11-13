@@ -37,6 +37,7 @@ Post New Tmeperatures Request Body Format:
     - uint32 thermometers_count
     - uint32 measurements_count
     - uint64 thermometer_ids[thermometers_count]
+    - uint64 measurements_timestamps[measurements_count]
     - int16 measurements[measurements_count][thermometers_count]
     
 Get Latest Temperatures Request Body Format:
@@ -115,7 +116,7 @@ function handlePostNewTemperatures(ws, data){
     const device_id = data.readUInt32LE(0);
     const thermometers_count = data.readUInt32LE(4);
     const measurements_count = data.readUInt32LE(8);
-    const expected_request_length = 12 + thermometers_count * 8 + thermometers_count * measurements_count * 2;
+    const expected_request_length = 12 + (thermometers_count + measurements_count) * 8 + (thermometers_count * measurements_count * 2);
     
     console.log(`Received Post New Temperatures Request 1:`, {
         device_id,
@@ -129,9 +130,13 @@ function handlePostNewTemperatures(ws, data){
     }
     
     const thermometers_ids = [];
+    const measurements_timestamps = [];
     const measurements = [];
     for(let i=0; i<thermometers_count; i++){
         thermometers_ids.push(data.readBigUInt64LE(12+i*8));
+    }
+    for(let i=0; i<measurements_count; i++){
+        measurements_timestamps.push(data.readBigUInt64LE(12+thermometers_count*8+i*8));
     }
     for(let i=0; i<measurements_count*thermometers_count; i++){
         measurements.push(data.readInt16LE(12+thermometers_count*8+i*2));
@@ -139,11 +144,12 @@ function handlePostNewTemperatures(ws, data){
     const measurements_c = measurements.map(x => raw_to_c(x));
     console.log(`Received Post New Temperatures Request 2:`, {
         thermometers_ids,
+        measurements_timestamps,
         measurements,
         measurements_c
     });
     
-    const times = new Array(measurements_count).fill(new Date());
+    const times = measurements_timestamps.map(x => x === 0n ? new Date() : new Date(Number(x)*1000));
     db.insert_new_measurements(times, thermometers_ids, measurements);
 }
 function invalidPostNewTemperatureRequest(ws, data, reason){
@@ -191,7 +197,7 @@ function handleSetSampleFrequency(ws, payload){
  * @param {WebSocket} ws 
  */
 function handleGetCurrentTimestamp(ws){
-    const timestamp = BigInt(Date.now());
+    const timestamp = BigInt(Date.now())/1000n;
     const buffer = Buffer.allocUnsafe(9);
     buffer.writeUInt8(RequestTypes.GetCurrentTimestamp, 0);
     buffer.writeBigUInt64LE(timestamp, 1);

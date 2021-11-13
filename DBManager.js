@@ -108,9 +108,9 @@ class DBManager{
     get_last_measurements(next = function(err, result){}){
         this.#_reconnect_if_nessesary(next, this.get_last_measurements.bind(this, ...arguments));
         const query =
-        `SELECT m.thermometer_id as id, m.time, m.value FROM measurements AS m JOIN(
-         SELECT MAX(m.time) AS TIME, m.thermometer_id AS id FROM measurements AS m GROUP BY m.thermometer_id
-         ) AS maxes ON m.thermometer_id = maxes.id AND m.time = maxes.time`;
+        `SELECT m.thermometer_id as id, m.time, MAX(m.value) as value FROM measurements AS m JOIN(
+         SELECT MAX(m.time) AS time, m.thermometer_id AS id FROM measurements AS m GROUP BY m.thermometer_id
+         ) AS maxes ON m.thermometer_id = maxes.id AND m.time = maxes.time GROUP BY m.thermometer_id, m.time`;
         this.query_with_reconnect(query, function(err, result, fields){
             if(err){
                 console.error("Error while performing get_last_measurements query: ", err);

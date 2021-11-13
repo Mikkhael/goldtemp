@@ -209,6 +209,7 @@ Post New Tmeperatures Request Body Format:
     - uint32 thermometers_count
     - uint32 measurements_count
     - uint64 thermometer_ids[thermometers_count]
+    - uint64 measurements_timestamps[measurements_count]
     - int16 measurements[measurements_count][thermometers_count]
 */
   void prepare_payload(){
@@ -221,6 +222,7 @@ Post New Tmeperatures Request Body Format:
     push((char*)&tracked_devices, 4);
     push((char*)&commited_measurements, 4);
     push((char*)device_ids, 8*tracked_devices);
+    push((char*)measurements_times, 8*commited_measurements);
     for(uint32_t i=0; i<commited_measurements; i++){
       push((char*)(measurements_values + i * MAX_DEVICES), tracked_devices*2);
     }
@@ -286,12 +288,18 @@ Post New Tmeperatures Request Body Format:
 			logln("Cannot commit more measurements");
 			return false;
 		}
+    measurements_times[commited_measurements] = ( is_timestamp_set() ? get_current_timestamp() : 0 );
 		commited_measurements += 1;
     clear_next_measurement();
 		return true;
 	}
 	
 	void print(){
+    for(size_t i=0; i<commited_measurements; i++){
+      logp(measurements_times[i]);
+      logp('\t');
+    }
+    logp('\n');
 		for(size_t i=0; i<tracked_devices; i++){
       logp(i, ": ", device_ids[i], " |\t");
 			for(size_t j=0; j<commited_measurements; j++){

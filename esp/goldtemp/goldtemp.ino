@@ -26,7 +26,26 @@ constexpr int  WS_HB_INTERVAL = 1000 * 15;
 uint32_t  DEVICE_ID = 100;
 int  TEMP_REFRESH = (1000 * 60 * 1);
 
-//// LOGGER ///////////////////
+//// LOGGER AND TIME ///////////////////
+
+bool is_current_timestamp_set_value = false;
+uint64_t current_timestamp_base = 0;
+uint32_t current_timestamp_millis_offset = 0;
+
+void set_current_timestamp(uint64_t timestamp){
+  current_timestamp_base = timestamp;
+  current_timestamp_millis_offset = millis() / 1000;
+  is_current_timestamp_set_value = true;
+}
+bool is_timestamp_set(){
+  return is_current_timestamp_set_value;
+}
+uint64_t get_current_timestamp(){
+  const uint32_t current_millis = millis() / 1000;
+  current_timestamp_base += current_millis - current_timestamp_millis_offset;
+  current_timestamp_millis_offset = current_millis;
+  return current_timestamp_base;
+}
 
 template<typename T, typename ... Ts>
 inline void logp(const T& arg, const Ts& ... args){
@@ -36,7 +55,8 @@ inline void logp(const T& arg, const Ts& ... args){
 inline void logp(){}
 template<typename ... Ts>
 inline void logln( const Ts& ... args ){
-	logp(args ..., '\n');
+  const auto now = get_current_timestamp();
+	logp(now, "| ", args ..., '\n');
 }
 
 //// WIFI /////////////////////
@@ -61,8 +81,7 @@ void net_status_update(bool force = false){
     }
   }else{
     if(last_wifi_status == true || force){
-      logp("WiFi Disconnected: ");
-      logln(WiFi.status());
+      logln("WiFi Disconnected: ", WiFi.status());
     }
   }
   last_wifi_status = (WiFi.status() == WL_CONNECTED);
@@ -102,18 +121,18 @@ uint64_t addressToUint(const DeviceAddress deviceAddress)
 void set_new_measurement_interval(const uint64_t);
 
 WebSocketsClient ws;
-bool ws_was_connected = false;
+bool ws_is_connected = false;
 void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
   switch(type) {
     case WStype_DISCONNECTED:{
-      if(ws_was_connected){
+      if(ws_is_connected){
         logln("[WSc] Disconnected!");
-        ws_was_connected = false;
+        ws_is_connected = false;
       }
       break;
     }
     case WStype_CONNECTED: {
-      ws_was_connected = true;
+      ws_is_connected = true;
       logln("[WSc] Connected to url: ", String((char*)payload));
       ws.sendTXT("Connected");
       break;
@@ -128,10 +147,15 @@ void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
     case WStype_BIN:{
 //      logln("[WSc] get binary length: ", length);
 //      ws.sendBIN(payload, length);
-      if(payload[0] == 30 && length == 9){
+      if(payload[0] == 30 && length == 9){ // New Sampling Interval
         uint64_t new_interval;
         memcpy(&new_interval, payload+1, 8);
         set_new_measurement_interval(new_interval);
+      }else if(payload[0] == 40 && length == 9){ // Current Timestamp
+        uint64_t new_timestamp;
+        memcpy(&new_timestamp, payload+1, 8);
+        set_current_timestamp(new_timestamp);
+        logln("Current timestamp set to: ", new_timestamp);
       }
       break;
     }
@@ -274,7 +298,7 @@ Post New Tmeperatures Request Body Format:
 				logp(raw_to_c(measurements_values[i + j*MAX_DEVICES]));
 				logp('\t');
 			}
-			logln();
+			logp('\n');
 		}
 	}
 	
@@ -456,15 +480,22 @@ IntervalExecution net_update_interval([]{
 }, 200);
 
 IntervalExecution measurement_routine_interval([]{
-  auto t1 = millis();
+  //auto t1 = millis();
   if(complete_measurement_routine()){
-    logp("Ok. ");
+    logln("Ok. ");
   }else{
-    logp("Measurement routine failed! ");
+    logln("Measurement routine failed! ");
   }
-  auto t2 = millis();
-  logln("(", t2-t1, "ms)");
+  //auto t2 = millis();
+  //logln("(", t2-t1, "ms)");
 }, 0);
+
+IntervalExecution current_timestamp_refresh([]{
+  if(!is_timestamp_set() && ws_is_connected){
+    static const uint8_t payload[] = {40};
+    ws.sendBIN(payload, 1);
+  }
+}, 5000);
 
 void set_new_measurement_interval(const uint64_t new_interval){
   measurement_routine_interval.update_interval(new_interval);
@@ -514,7 +545,8 @@ void loop(void)
       Serial.println(command);
     }
   }
+  ws.loop();
+  current_timestamp_refresh();
   net_update_interval();
   measurement_routine_interval();
-  ws.loop();
 }

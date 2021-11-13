@@ -38,9 +38,7 @@ Post New Tmeperatures Request Body Format:
     - uint32 measurements_count
     - uint64 thermometer_ids[thermometers_count]
     - int16 measurements[measurements_count][thermometers_count]
-*/
-
-/*
+    
 Get Latest Temperatures Request Body Format:
     - uint8 request_type (20)
 Response:
@@ -49,12 +47,16 @@ Response:
     - uint64 timestamps[count]
     - uint64 thermometer_ids[count]
     - int16  measurements[count]
-*/
-
-/*
+    
 Set Sample Frequency:
     - uint8  request_type (30)
     - uint64 sample_interval_ms
+    
+Get Current Timestamp:
+    - uint8  request_type (40)
+Response:
+    - uint8  request_type (40)
+    - uint64 current_timestamp
 */
 
 /**@type {WebSocket[]} */
@@ -63,7 +65,8 @@ const connected_clients = [];
 const RequestTypes = {
     PostNewTemperatures: 10,
     GetLastMeasurements: 20,
-    SetSampleFrequency: 30
+    SetSampleFrequency: 30,
+    GetCurrentTimestamp: 40
 };
 Object.freeze(RequestTypes);
 
@@ -91,6 +94,11 @@ function handleMessage(ws, data, isBinary){
         }
         case RequestTypes.SetSampleFrequency: {
             handleSetSampleFrequency(ws, data);
+            break;
+        }
+        case RequestTypes.GetCurrentTimestamp: {
+            handleGetCurrentTimestamp(ws);
+            break;
         }
     }
 }
@@ -173,10 +181,26 @@ function handleSetSampleFrequency(ws, payload){
     for(let client of connected_clients){
         client.send(payload, err => {
             if(err){
-                console.log(`Error while sending Set Sample Frequency Request: `, err);
+                console.error(`Error while sending Set Sample Frequency Request: `, err);
             }
         });
     }
+}
+
+/**
+ * @param {WebSocket} ws 
+ */
+function handleGetCurrentTimestamp(ws){
+    const timestamp = BigInt(Date.now());
+    const buffer = Buffer.allocUnsafe(9);
+    buffer.writeUInt8(RequestTypes.GetCurrentTimestamp, 0);
+    buffer.writeBigUInt64LE(timestamp, 1);
+    console.log(`Responding with current timestamp of: `, timestamp);
+    ws.send(buffer, err => {
+        if(err){
+            console.error(`Error while sending Get Current Timestamp Resposne: `, err);
+        }
+    });
 }
 
 

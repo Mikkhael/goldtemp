@@ -191,15 +191,18 @@ struct Measurements{
 	static constexpr int16_t NO_TEMP = -200 * 128;
 	static constexpr uint32_t MAX_DEVICES = ::MAX_DEVICES;
 	static constexpr uint32_t MAX_MEASUREMENTS = 500;
+  static constexpr uint32_t MAX_PAYLOAD_MEASUREMENTS_SIZE = (8 + 2*MAX_DEVICES)*50;
+  static constexpr uint32_t MAX_PAYLOAD_SIZE = 14 + 1 + 4*3 + 8*MAX_DEVICES + MAX_PAYLOAD_MEASUREMENTS_SIZE;
 
   size_t payload_length = 0;
+  uint8_t ws_payload[MAX_PAYLOAD_SIZE]{};
 
-  char     ws_payload_begining[(MAX_DEVICES + MAX_MEASUREMENTS)*8 + 50];
 	uint64_t device_ids[MAX_DEVICES]{};
 	uint64_t measurements_times[MAX_MEASUREMENTS];
 	int16_t  measurements_values[MAX_DEVICES * MAX_MEASUREMENTS];
 	
 	uint32_t commited_measurements = 0;
+  uint32_t payloaded_measurements = 0;
 	uint32_t tracked_devices = 0;
 
 /*
@@ -212,35 +215,64 @@ Post New Tmeperatures Request Body Format:
     - uint64 measurements_timestamps[measurements_count]
     - int16 measurements[measurements_count][thermometers_count]
 */
-  void prepare_payload(){
+  void prepare_payload(){ // TODO
+    static const uint8_t request_id = 10;
+    
     auto t1 = millis();
-    char* head = (char*)ws_payload_begining + 14;
-    auto push = [&head, this](const char* data, const size_t length){ memcpy(head, data, length); head += length; };
-    const char request_id = 10;
-    push(&request_id, 1);
+    payloaded_measurements = MAX_PAYLOAD_MEASUREMENTS_SIZE / (8 + 2*tracked_devices);
+    if(payloaded_measurements > commited_measurements)
+      payloaded_measurements = commited_measurements;
+    uint32_t measurements_diff = commited_measurements - payloaded_measurements;
+    
+    payload_length = 14;
+    auto push = [this](const char* data, const size_t length){ memcpy(ws_payload + payload_length, data, length); payload_length += length; };
+    push((char*)&request_id, 1);
     push((char*)&DEVICE_ID, 4);
     push((char*)&tracked_devices, 4);
-    push((char*)&commited_measurements, 4);
+    push((char*)&payloaded_measurements, 4);
     push((char*)device_ids, 8*tracked_devices);
-    push((char*)measurements_times, 8*commited_measurements);
-    for(uint32_t i=0; i<commited_measurements; i++){
-      push((char*)(measurements_values + i * MAX_DEVICES), tracked_devices*2);
+    push((char*)(measurements_times + measurements_diff), 8*payloaded_measurements);
+    for(uint32_t i=0; i<payloaded_measurements; i++){
+      push((char*)(measurements_values + (commited_measurements - i - 1) * MAX_DEVICES), tracked_devices*2);
     }
-    payload_length = head - (char*)ws_payload_begining - 14;
+    
     auto t2 = millis();
+
+    //logln("DEBUG: ", sizeof(ws_payload), " ", payloaded_measurements, " ", commited_measurements, " ", measurements_diff, " ", MAX_PAYLOAD_MEASUREMENTS_SIZE, " ", MAX_PAYLOAD_SIZE);
+
+    //commited_measurements -= payload_length;
     logln("Preparing took ", t2-t1, " millis. Payload length: ", payload_length);
   }
 
+  void clear_payload(){
+    payload_length = 0;
+    payloaded_measurements = 0;
+  }
   bool send_payload(){
     if(payload_length == 0){
       logln("No payload prepared.");
       return false;
     }
-    return ws.sendBIN((uint8_t*)ws_payload_begining, payload_length, true);
+    return ws.sendBIN((uint8_t*)ws_payload, payload_length - 14, true);
+  }
+  bool send_measurement_part(){
+    prepare_payload();
+    if(!send_payload()) return false;
+    commited_measurements -= payloaded_measurements;
+    clear_payload();
+    clear_next_measurement();
+    return true;
+  }
+  bool send_all_measurements(){
+    while(commited_measurements > 0){
+      if(!send_measurement_part()) return false;
+    }
+    return true;
   }
   
 	void clear_next_measurement(){
-		if(commited_measurements >= MAX_MEASUREMENTS || payload_length != 0)
+    clear_payload();
+		if(commited_measurements >= MAX_MEASUREMENTS)
 			return;
 		for(size_t i=0; i<MAX_DEVICES; i++){
 			measurements_values[i + commited_measurements*MAX_DEVICES] = NO_TEMP;
@@ -250,15 +282,12 @@ Post New Tmeperatures Request Body Format:
 	void clear(){
 		commited_measurements = 0;
 		tracked_devices = 0;
-    payload_length = 0;
+    clear_payload();
 		clear_next_measurement();
 	}
 	bool set_value(uint64_t device_id, int16_t value){
-    if(payload_length != 0){
-      logln("Cannot add a measurement while payload is prepared.");
-      return false;
-    }
-		if(commited_measurements >= MAX_DEVICES){
+    clear_payload();
+		if(commited_measurements >= MAX_MEASUREMENTS){
 			logln("Too many measurements");
 			return false;
 		}
@@ -280,10 +309,7 @@ Post New Tmeperatures Request Body Format:
 		return true;
 	}
 	bool commit(){
-    if(payload_length != 0){
-      logln("Cannot commit measurements while payload is prepared.");
-      return false;
-    }
+    clear_payload();
 		if(commited_measurements >= MAX_MEASUREMENTS){
 			logln("Cannot commit more measurements");
 			return false;
@@ -395,8 +421,7 @@ bool complete_measurement_routine(){
   rescan_devices();
   request_temperatures();
   if(!getAllTemperatures()) return false;
-  measurements.prepare_payload();
-  if(!measurements.send_payload()) return false;
+  if(!measurements.send_all_measurements()) return false;
   return true;
 }
 
@@ -422,13 +447,29 @@ void fill_test_temperatures(){
   measurements.commit();
 }
 void test_routine(){
-  Serial.print("======= Testing upload =======");
+  Serial.print("======= Testing =======");
   fill_test_temperatures();
   Serial.println("Generated temperatures:");
   measurements.print();
   
-  // TODO
-  
+}
+
+void big_test_routine(uint64_t d_count, uint64_t m_count){
+  Serial.print("======= Testing ======= Generating Big test for\n Devices: ");
+  Serial.print(d_count);
+  Serial.print("\n Measurements: ");
+  Serial.println(m_count);
+  measurements.clear();
+  int16_t m = 10000;
+  for(size_t i=0; i<m_count; i++){
+    for(size_t j=0; j<d_count; j++){
+      Serial.printf("(%u,%u)",i,j);
+      measurements.set_value(77700000 + j, ++m );
+    }
+    Serial.println();
+    measurements.commit();
+  }
+  Serial.println("DONE");
 }
 
 //// SETUP AND LOOP ///////////////////////////
@@ -525,15 +566,34 @@ void loop(void)
       getAllTemperatures();
     }else if(command == "z"){
       measurement_routine_interval.execute_now();
+    }else if(command == "s"){
+      bool res = measurements.send_all_measurements();
+      logln("Send status: ", res);
     }else if(command == "print"){
       measurements.print();
     }else if(command == "send"){
       bool res = measurements.send_payload();
       logln("Sent payload with status: ", res);
+    }else if(command == "sendflush"){
+      logln("Flushing records: ", measurements.payloaded_measurements);
+      measurements.commited_measurements -= measurements.payloaded_measurements;
+    }else if(command == "clearpayload"){
+      measurements.clear_payload();
+      logln("Cleared payload");
     }else if(command == "clear"){
       measurements.clear();
     }else if(command == "test"){
       test_routine();
+    }else if(command == "test0"){
+      big_test_routine(Measurements::MAX_DEVICES, Measurements::MAX_MEASUREMENTS);
+    }else if(command == "test1"){
+      big_test_routine(Measurements::MAX_DEVICES-1, Measurements::MAX_MEASUREMENTS-1);
+    }else if(command == "test2"){
+      big_test_routine(Measurements::MAX_DEVICES, Measurements::MAX_MEASUREMENTS-1);
+    }else if(command == "test3"){
+      big_test_routine(Measurements::MAX_DEVICES-1, Measurements::MAX_MEASUREMENTS);
+    }else if(command == "test4"){
+      big_test_routine(Measurements::MAX_DEVICES/2, Measurements::MAX_MEASUREMENTS/2);
     }else if(command == "prepare"){
       measurements.prepare_payload();
       logln("Prepared payload.");

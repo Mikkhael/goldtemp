@@ -5,6 +5,10 @@ const app = express();
 const server = require('http').createServer(app);
 const {WebSocketServer, WebSocket} = require('ws');
 
+const DEBUG = process.env['DEBUG_MODE'] == '1';
+
+const fs = require('fs');
+
 const PORT = process.env.PORT || 8080;
 
 
@@ -118,11 +122,13 @@ function handlePostNewTemperatures(ws, data){
     const measurements_count = data.readUInt32LE(8);
     const expected_request_length = 12 + (thermometers_count + measurements_count) * 8 + (thermometers_count * measurements_count * 2);
     
-    console.log(`Received Post New Temperatures Request 1:`, {
-        device_id,
-        thermometers_count,
-        measurements_count
-    });
+    if(DEBUG){
+        console.log(`Received Post New Temperatures Request 1:`, {
+            device_id,
+            thermometers_count,
+            measurements_count
+        });
+    }
     
     if(data.length !== expected_request_length){
         invalidPostNewTemperatureRequest(ws, data, `Request of invalid length: ${data.length} (expected ${expected_request_length})`);
@@ -139,21 +145,24 @@ function handlePostNewTemperatures(ws, data){
         measurements_timestamps.push(data.readBigUInt64LE(12+thermometers_count*8+i*8));
     }
     for(let i=0; i<measurements_count*thermometers_count; i++){
-        measurements.push(data.readInt16LE(12+thermometers_count*8+i*2));
+        measurements.push(data.readInt16LE(12+(thermometers_count+measurements_count)*8+i*2));
     }
     const measurements_c = measurements.map(x => raw_to_c(x));
-    console.log(`Received Post New Temperatures Request 2:`, {
-        thermometers_ids,
-        measurements_timestamps,
-        measurements,
-        measurements_c
-    });
     
+    if(DEBUG){   
+        console.log(`Received Post New Temperatures Request 2:`, {
+            thermometers_ids,
+            measurements_timestamps,
+            measurements,
+            measurements_c
+        });
+    }
+        
     const times = measurements_timestamps.map(x => x === 0n ? new Date() : new Date(Number(x)*1000));
     db.insert_new_measurements(times, thermometers_ids, measurements);
 }
 function invalidPostNewTemperatureRequest(ws, data, reason){
-    console.log(`Invalid Post New Request Temperature Request: `, reason);
+    console.error(`Invalid Post New Request Temperature Request: `, reason);
 }
 
 /**

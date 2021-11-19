@@ -2,6 +2,9 @@
 const mysql = require('mysql2');
 
 const DB_CRED = require('./db_credentials');
+
+const table_name = process.env['DEBUG_MODE'] == '1' ? "measurements_test" : "measurements";
+
 class DBManager{
     constructor(){
         this.default_connection_params = {
@@ -84,12 +87,12 @@ class DBManager{
     insert_new_measurements(times, thermometers_ids, values, next = function(err){}){
         this.#_reconnect_if_nessesary(next, this.insert_new_measurements.bind(this, ...arguments));
         const NO_VALUE = -200;
-        let query = `INSERT INTO measurements (time, thermometer_id, value) VALUES `;
+        let query = `INSERT INTO ${table_name} (time, thermometer_id, value) VALUES `;
         for(let time_i=0; time_i<times.length; time_i++){
             const time = times[time_i];
             for (let i = 0; i < thermometers_ids.length; i++) {
                 const thermometer_id = thermometers_ids[i];
-                const value = values[time_i*times.length + i];
+                const value = values[time_i*thermometers_ids.length + i];
                 if(value === NO_VALUE){
                     continue;
                 }
@@ -108,8 +111,8 @@ class DBManager{
     get_last_measurements(next = function(err, result){}){
         this.#_reconnect_if_nessesary(next, this.get_last_measurements.bind(this, ...arguments));
         const query =
-        `SELECT m.thermometer_id as id, m.time, MAX(m.value) as value FROM measurements AS m JOIN(
-         SELECT MAX(m.time) AS time, m.thermometer_id AS id FROM measurements AS m GROUP BY m.thermometer_id
+        `SELECT m.thermometer_id as id, m.time, MAX(m.value) as value FROM ${table_name} AS m JOIN(
+         SELECT MAX(m.time) AS time, m.thermometer_id AS id FROM ${table_name} AS m GROUP BY m.thermometer_id
          ) AS maxes ON m.thermometer_id = maxes.id AND m.time = maxes.time GROUP BY m.thermometer_id, m.time`;
         this.query_with_reconnect(query, function(err, result, fields){
             if(err){

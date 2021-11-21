@@ -39,6 +39,18 @@
     
     <br />
     
+    <div id="config">
+        CRED_SSID: <input v="1" type="text"> <br />
+        CRED_PASS: <input v="2" type="text"> <br />
+        WS_HOST: <input  v="3" type="text"> <br />
+        WS_PORT: <input  v="4" type="text"> <br />
+        SAMPLE_INTERVAL: <input  v="5" type="text"> <br />
+    </div>
+    
+    <button onclick="getConfig()">Get Config</button>
+    <button onclick="setConfig()">Set Config</button>
+    <button onclick="saveConfig()">Save Config</button>
+    <button onclick="reboonNetwork()">Reboot Network</button>
     
     <div id="last_measurements">
         
@@ -52,8 +64,75 @@
     
 <script>
 //@ts-check
+
+class Config{
+    constructor(cred_ssid, cred_pass, ws_host, ws_port, sample_interval){
+        this.cred_ssid = cred_ssid;
+        this.cred_pass = cred_pass;
+        this.ws_host = ws_host;
+        this.ws_port = ws_port;
+        this.sample_interval = sample_interval;
+    }
     
-// Create WebSocket connection.
+    encode(view){
+        for(let i=0; i<31 && i < this.cred_ssid.length; i++){
+            view.setUint8(i, this.cred_ssid.charCodeAt(i));
+        }
+        view.setUint8(31, 0);
+        for(let i=0; i<31 && i < this.cred_pass.length; i++){
+            view.setUint8(32 + i, this.cred_pass.charCodeAt(i));
+        }
+        view.setUint8(32+31, 0);
+        for(let i=0; i<101 && i < this.ws_host.length; i++){
+            view.setUint8(32+32 + i, this.ws_host.charCodeAt(i));
+        }
+        view.setUint8(32+32+101, 0);
+        view.setUint16(32+32+102, this.ws_port, true);
+        view.setBigUint64(32+32+102+2, BigInt(this.sample_interval), true);
+    }
+    
+    decode(view){
+        this.cred_ssid = [];
+        for(let i=0; i<32; i++){
+            let c = view.getUint8(i);
+            if(c == 0) break;
+            this.cred_ssid[i] = c;
+        }
+        this.cred_ssid = this.cred_ssid.map(x => String.fromCharCode(x)).join('');
+        this.cred_pass = [];
+        for(let i=0; i<32; i++){
+            let c = view.getUint8(32 + i);
+            if(c == 0) break;
+            this.cred_pass[i] = c;
+        }
+        this.cred_pass = this.cred_pass.map(x => String.fromCharCode(x)).join('');
+        this.ws_host = [];
+        for(let i=0; i<102; i++){
+            let c = view.getUint8(32+32 + i);
+            if(c == 0) break;
+            this.ws_host[i] = c;
+        }
+        this.ws_host = this.ws_host.map(x => String.fromCharCode(x)).join('');
+        this.ws_port = view.getUint16(32+32+102, true);
+        this.sample_interval = view.getBigUint64(32+32+102+2, true);
+    }
+    
+    show(){
+        document.querySelector("#config>input[v='1']").value = this.cred_ssid;
+        document.querySelector("#config>input[v='2']").value = this.cred_pass;
+        document.querySelector("#config>input[v='3']").value = this.ws_host;
+        document.querySelector("#config>input[v='4']").value = this.ws_port;
+        document.querySelector("#config>input[v='5']").value = this.sample_interval;
+    }
+    
+    load(){
+        this.cred_ssid = document.querySelector("#config>input[v='1']").value;
+        this.cred_pass = document.querySelector("#config>input[v='2']").value;
+        this.ws_host = document.querySelector("#config>input[v='3']").value;
+        this.ws_port = +document.querySelector("#config>input[v='4']").value;
+        this.sample_interval = +document.querySelector("#config>input[v='5']").value;
+    }
+};
 
 const messages = document.getElementById('messages');
 
@@ -90,6 +169,8 @@ function createSocket(address){
                     handleLastMeasurements(view);
                 }else if(view.getUint8(0) == 51){
                     handleLastLogs(view);
+                }else if(view.getUint8(0) == 61){
+                    handleGetConfig(view);
                 }
             })
         }else{
@@ -212,6 +293,34 @@ function handleLastLogs(view){
         arr = [...arr, ...arr2];
     }
     document.getElementById('logs').innerHTML = arr.map(x => String.fromCharCode(x)).join('');
+}
+
+function getConfig(){
+    socket.send( Uint8Array.from([60]) );
+}
+function setConfig(){
+    const c = new Config();
+    c.load();
+    const buffer = new ArrayBuffer(1+32+32+102+2+8);
+    const view = new DataView(buffer,0,1);
+    view.setUint8(0, 70);
+    const view2 = new DataView(buffer, 1);
+    c.encode(view2);
+    socket.send(buffer);
+}
+
+function reboonNetwork(){
+    socket.send(Uint8Array.from([71]));
+}
+function saveConfig(){
+    socket.send(Uint8Array.from([72]));
+}
+
+function handleGetConfig(view){
+    const c = new Config();
+    const view2 = new DataView(view.buffer, 5);
+    c.decode(view2);
+    c.show();
 }
 
 </script>

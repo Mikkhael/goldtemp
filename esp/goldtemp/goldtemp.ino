@@ -5,24 +5,90 @@
 #include <DallasTemperature.h>
 #include <ESP8266WiFi.h>
 #include <WebSocketsClient.h>
-#include <type_traits>
+#include <ESP_EEPROM.h>
+
+void set_new_measurement_interval(const uint64_t);
 
 //// CONFIG /////////////////////
 
-constexpr int  MAX_DEVICES = 20;
+constexpr int  MAX_DEVICES = 10;
 constexpr int  ONE_WIRE_BUS = D1;
 
+struct Config{
+  char CRED_SSID[32] = "TP-LINK_FD2F53";
+  char CRED_PASS[32] = "42936961";
+  char WS_HOST[102] = "192.168.0.101";
+  uint16_t WS_PORT = 8080;
+  uint64_t SAMPLE_INTERVAL = 0;
+};
+static_assert(sizeof(Config) == 32+32+102 + 2 + 8);
 
-constexpr char CRED_SSID[] =  "TP-LINK_FD2F53";
-constexpr char CRED_PASS[] = "42936961";
+struct ConfigWithWsPayload{
+  char payload_header_padding[24];
+  Config cfg;
+  char* get_payload_start(){ return payload_header_padding + 24 - 14 - 1 - 4 - 4; }
+};
+ConfigWithWsPayload config_with_ws_payload;
+
+bool config_changed = false;
+Config& cfg = config_with_ws_payload.cfg;
+
+bool save_config(){
+  if(!config_changed){
+    return true;
+  }
+  EEPROM.put(0, cfg);
+  if(!EEPROM.commit()){
+    return false;
+  }
+  config_changed = false;
+  return true;
+}
+
+void validate_config(){
+  cfg.CRED_SSID[sizeof(cfg.CRED_SSID)-1] = '\0';
+  cfg.CRED_PASS[sizeof(cfg.CRED_PASS)-1] = '\0';
+  cfg.WS_HOST[sizeof(cfg.WS_HOST)-1] = '\0';
+  if(cfg.SAMPLE_INTERVAL < 5000 && cfg.SAMPLE_INTERVAL != 0){
+    cfg.SAMPLE_INTERVAL = 5000;
+  }
+}
+
+void set_config(char key, String value){
+  switch(key){
+    case '1':{
+      strncpy(cfg.CRED_SSID, value.c_str(), sizeof(cfg.CRED_SSID));
+      break;
+    }
+    case '2':{
+      strncpy(cfg.CRED_PASS, value.c_str(), sizeof(cfg.CRED_PASS));
+      break;
+    }
+    case '3':{
+      strncpy(cfg.WS_HOST, value.c_str(), sizeof(cfg.WS_HOST));
+      break;
+    }
+    case '4':{
+      cfg.WS_PORT = value.toInt();
+      break;
+    }
+    case '5':{
+      cfg.SAMPLE_INTERVAL = value.toInt();
+      break;
+    }
+    default:{
+      return;
+    }
+  }
+  validate_config();
+  config_changed = true;
+}
+
 //constexpr char CRED_SSID[] =  "👌";
 //constexpr char CRED_PASS[] = "qwertyui";
-
-constexpr char WS_HOST[] = "192.168.0.101";
 //constexpr char WS_HOST[] = "192.168.43.111";
-constexpr int  WS_PORT = 8080;
-constexpr char WS_URL[] = "/";
-constexpr int  WS_HB_INTERVAL = 1000 * 15;
+
+constexpr int WS_HB_INTERVAL = 1000 * 15;
 
 uint32_t  DEVICE_ID = 100;
 
@@ -118,17 +184,19 @@ inline void logln( const Ts& ... args ){
 //// WIFI /////////////////////
 WiFiClient client;
 
-bool wifi_connect(){
-  WiFi.begin(CRED_SSID, CRED_PASS);
+void reboot_network();
+
+bool wait_for_wifi_to_connect(int retries = 8){
   int code = 0;
-  while(true){
+  while(--retries >= 0){
     code = WiFi.status();
-    if(code != WL_DISCONNECTED && code != WL_IDLE_STATUS)
+    if(code == WL_CONNECTED)
       break;
     delay(500);
   }
   return code == WL_CONNECTED;
 }
+
 void net_status_update(bool force = false){
   static bool last_wifi_status = false;
   if(WiFi.status() == WL_CONNECTED){
@@ -174,7 +242,6 @@ uint64_t addressToUint(const DeviceAddress deviceAddress)
 }
 
 //// WebSockets ////////////////////
-void set_new_measurement_interval(const uint64_t);
 
 WebSocketsClient ws;
 bool ws_is_connected = false;
@@ -215,7 +282,7 @@ void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
         memcpy(&new_timestamp, payload+1, 8);
         set_current_timestamp(new_timestamp);
         logln<true>("Current timestamp set to: ", new_timestamp);
-      }else if(payload[0] == 50 && length == 6){
+      }else if(payload[0] == 50 && length == 6){ // Get Logs
         char response_id = 51;
         uint32_t seq;
         uint8_t only_important;
@@ -228,6 +295,30 @@ void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
         memcpy(buf + 14 + 1 + 4, &only_important, 1);
         memcpy(buf + 14 + 1 + 4 + 1, &DEVICE_ID, 4);
         ws.sendBIN((uint8_t*)buf, len, true);
+      }else if(payload[0] == 60 && length == 5){ // Get Config
+        char response_id = 61;
+        uint32_t seq;
+        memcpy(&seq, payload+1, 4);
+        char* buf = config_with_ws_payload.get_payload_start();
+        memcpy(buf + 14, &response_id, 1);
+        memcpy(buf + 14 + 1, &seq, 4);
+        memcpy(buf + 14 + 1 + 4, &DEVICE_ID, 4);
+        ws.sendBIN((uint8_t*)buf, 1+4+4+sizeof(Config), true);
+      }else if(payload[0] == 70 && length == 1 + sizeof(Config)){ // Set Config
+        memcpy(&cfg, payload+1, sizeof(cfg));
+        config_changed = true;
+        validate_config();
+        set_new_measurement_interval(cfg.SAMPLE_INTERVAL);
+      }else if(payload[0] == 71 && length == 1){ // Reboot Network
+        logln<true>("Rebooting Network");
+        reboot_network();
+      }else if(payload[0] == 72 && length == 1){ // Save Config
+        if(save_config()){
+          logln<true>("Saved Config");
+        }else{
+          logln<true>("Failed to save Config");
+        }
+        logln<true>("EEPROM usage: ", EEPROM.percentUsed());
       }
       break;
     }
@@ -250,7 +341,8 @@ void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
 }
 
 void ws_begin(){
-  ws.begin(WS_HOST, WS_PORT, WS_URL);
+  ws.disconnect();
+  ws.begin(cfg.WS_HOST, cfg.WS_PORT, "/");
   ws.onEvent(wsEventHandler);
   ws.setReconnectInterval(5000);
   ws.enableHeartbeat(WS_HB_INTERVAL, 3000, 2);
@@ -546,13 +638,42 @@ void big_test_routine(uint64_t d_count, uint64_t m_count){
 
 //// SETUP AND LOOP ///////////////////////////
 
+void show_config(){
+  logln<true>("Config" , config_changed ? "*" : "" , 
+    "|CRED_SSID:", cfg.CRED_SSID,
+    "|CRED_PASS:", cfg.CRED_PASS,
+    "|WS_HOST:", cfg.WS_HOST,
+    "|WS_PORT:", cfg.WS_PORT,
+    "|SAMPLE_INTERVAL:", cfg.SAMPLE_INTERVAL);
+}
+
+void EEPROM_init(){
+  EEPROM.begin(sizeof(Config));
+  if(EEPROM.percentUsed() >= 0) {
+    EEPROM.get(0, cfg);
+    logln<true>("EEPROM usage: ", EEPROM.percentUsed());
+  } else {
+    logln<true>("No EEPROM saved");  
+  }
+  show_config();
+}
+
+void reboot_network(){
+  logln("Connecting to WiFi...");
+  WiFi.disconnect();
+  WiFi.begin(cfg.CRED_SSID, cfg.CRED_PASS);
+  wait_for_wifi_to_connect();
+  ws_begin();
+  net_status_update(true);
+}
+
 void setup(void)
 {
   Serial.begin(115200);
-  logln("Connecting to WiFi...");
-  wifi_connect();
-  ws_begin();
-  net_status_update(true);
+  Serial.println();
+  EEPROM_init();
+  reboot_network();
+  set_new_measurement_interval(cfg.SAMPLE_INTERVAL);
   rescan_devices_with_log();
 }
 
@@ -596,7 +717,7 @@ IntervalExecution net_update_interval([]{
   //logln(millis());
   if(WiFi.status() != WL_CONNECTED){
     logln("Reconnecting to wifi...");
-    wifi_connect();
+    wait_for_wifi_to_connect();
   }
 }, 200);
 
@@ -661,6 +782,13 @@ bool handle_command(String command){
     big_test_routine(Measurements::MAX_DEVICES-1, Measurements::MAX_MEASUREMENTS);
   }else if(command == "test4"){
     big_test_routine(Measurements::MAX_DEVICES/2, Measurements::MAX_MEASUREMENTS/2);
+  }else if(command == "showconfig"){
+    show_config();
+  }else if(command == "reboot"){
+    reboot_network();
+  }else if(command == "saveconfig"){
+    bool res = save_config();
+    logln("Save Config Status: ", res);
   }else if(command == "log"){
     Serial.println("=== LOGS  ===");
     log_buffer.print_to_serial();
@@ -670,14 +798,26 @@ bool handle_command(String command){
   }else if(command == "prepare"){
     measurements.prepare_payload();
     logln("Prepared payload.");
+  }else if(command.startsWith("wstestsend")){
+    String data = command.substring(10);
+    auto res = ws.sendTXT(data);
+    logln("Test Sending Status: ", res);
   }else if(command.startsWith("int")){
     int new_interval = command.substring(3).toInt();
     measurement_routine_interval.update_interval(new_interval);
     logln("Set new interval to ", new_interval);
-  }else if(command == "wstestsend"){
-    String data = command.substring(10);
-    auto res = ws.sendTXT(data);
-    logln("Test Sending Status: ", res);
+  }else if(command.startsWith("cfg")){
+    int64_t from = 3;
+    int64_t to = 0;
+    while(from < command.length()){
+      char key = command[from];
+      to = command.indexOf(',', from);
+      if(to < 0) to = command.length();
+      String value = command.substring(from+1, to);
+      logln("Config ", key, " : ", value);
+      set_config(key, value);
+      from = to + 1;
+    }
   }else{
     logln("Unknown command: ", command);
     return false;

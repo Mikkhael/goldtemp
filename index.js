@@ -75,11 +75,33 @@ Get Logs:
     - uint8 get_only_important (0|1)
 Response:
     - uint8 response_type (51)
-    [ - uint32 seq (ESP <-> Server) ]
+    [ - uint32 seq (Server <-> ESP) ]
     - uint8 is_only_important (0|1)
     - uint32 device_id
     - char[] data
+    
+Get Config
+    - uint8 request_type 60
+    [ - uint32 seq (Server <-> ESP) ]
+Response:
+    - uint8 response_type 61
+    [ - uint32 seq (Server <-> ESP) ]
+    - uint32 device_id
+    - char[32+32+102+2+8] data
+    
+Set Config:
+    - uint8 request_type 70
+    - char[32+32+102+2+8] data
+
+Reboot Network:
+    - uint8 request_type 71
+    
+Save Config:
+    - uint8 request_type 72
+    
 */
+
+const DEVICE_CONFIG_LEN = 32+32+102+2+8;
 
 class WebSocketSession{
     /**@typedef {WebSocket & {session: WebSocketSession}} WebSocketWithSession */
@@ -92,6 +114,127 @@ const SequenceManager = require('./SequenceManager');
 const sequenceManager = new SequenceManager;
 
 
+/**
+ * 
+ * @param {WebSocketWithSession} client_ws 
+ * @param {Object.<number, WebSocketWithSession>} devices 
+ * @param {Buffer} payload 
+ * @param {function(Error, WebSocketWithSession):void} next
+ */
+function forwardMessageWithSeq(client_ws, devices, payload, next){
+    for(const device_id in devices){
+        const device_ws = devices[device_id];
+        sequenceManager.register_new(client_ws, (number) => {
+            const buffer = Buffer.allocUnsafe(payload.length + 4);
+            payload.copy(buffer, 4);
+            buffer.writeUInt8(payload.readUInt8(0), 0);
+            buffer.writeUInt32LE(number, 1);
+            device_ws.send(buffer, err => {
+                next(err, device_ws);
+            });
+        });
+    }
+}
+
+/**
+ * 
+ * @param {WebSocketWithSession} ws 
+ * @param {string} name 
+ * @param {number} expected_len 
+ * @param {Buffer} payload
+ */
+function handleForwardDefault(ws, name, expected_len, payload){
+    if(ws.session.device_id !== 0){
+        console.error(`Error: Received ${name} from a device with id ${ws.session.device_id}`);
+        return;
+    }
+    if(payload.length !== expected_len){
+        console.error(`Error: invalid ${name} Size: ${payload.length} (expected ${expected_len})` );
+        return;
+    }
+    forwardMessageWithSeq(ws, connected_devices, payload, (err, device_ws) => {
+        if(err){
+            console.error(`Error while sending ${name}`);
+        }else{
+            console.log(`Sent ${name} to device with id ${device_ws.session.device_id}`);
+        }
+    });
+}
+/**
+ * 
+ * @param {WebSocketWithSession} ws 
+ * @param {string} name 
+ * @param {number} expected_len 
+ * @param {Buffer} payload
+ */
+function handleForwardDefaultNoSeq(ws, name, expected_len, payload){
+    if(ws.session.device_id !== 0){
+        console.error(`Error: Received ${name} from a device with id ${ws.session.device_id}`);
+        return;
+    }
+    if(payload.length !== expected_len){
+        console.error(`Error: invalid ${name} Size: ${payload.length} (expected ${expected_len})` );
+        return;
+    }
+    for(const device_id in connected_devices){
+        const device_ws = connected_devices[device_id];
+        device_ws.send(payload, err => {
+            if(err){
+                console.error(`Error while sending ${name}`);
+            }
+        });
+    }
+}
+
+/**
+ * 
+ * @param {WebSocketWithSession} device_ws 
+ * @param {Buffer} payload 
+ * @param {function(Error):void} next
+ */
+function forwardBackMessageWithSeq(device_ws, payload, next){
+    const seq = payload.readUInt32LE(1);
+    const client_ws = sequenceManager.release(seq);
+    if(!client_ws){
+        console.error(`Error: Received Unregistered Seq Number: ${seq}`);
+        next(null);
+    }
+    payload.writeUInt8(payload.readInt8(0), 4);
+    client_ws.send(payload.slice(4), err =>{
+        next(err);
+    });
+}
+
+/**
+ * 
+ * @param {WebSocketWithSession} ws 
+ * @param {string} name 
+ * @param {number} expected_len 
+ * @param {Buffer} payload
+ * @param {boolean} leneq
+ */
+function handleForwardBackDefault(ws, name, expected_len, payload, leneq = true){
+    if(ws.session.device_id === 0){
+        console.error(`Error: Received ${name} from a non-device`);
+        return;
+    }
+    if(leneq){
+        if(payload.length != expected_len){
+            console.error(`Error: invalid ${name} Size: ${payload.length} (expected ${expected_len})` );
+            return;
+        }
+    }else{
+        if(payload.length < expected_len){
+            console.error(`Error: invalid ${name} Size: ${payload.length} (expected >= ${expected_len})` );
+            return;
+        }
+    }
+    forwardBackMessageWithSeq(ws, payload, (err) => {
+        if(err){
+            console.error(`Error while sending ${name}`);
+        }
+    });
+}
 
 /**@type {Object.<number, WebSocketWithSession>} */
 const connected_devices = {};
@@ -103,7 +246,12 @@ const RequestTypes = {
     SetSampleFrequency: 30,
     GetCurrentTimestamp: 40,
     GetLogsRequest: 50,
-    GetLogsResponse: 51
+    GetLogsResponse: 51,
+    GetConfigRequest: 60,
+    GetConfigResponse: 61,
+    SetConfig: 70,
+    RebootNetwork: 71,
+    SaveConfig: 72
 };
 Object.freeze(RequestTypes);
 
@@ -143,12 +291,29 @@ function handleMessage(ws, data, isBinary){
             break;
         }
         case RequestTypes.GetLogsRequest: {
-            handleGetLogsRequest(ws, data.slice(1));
+            handleGetLogsRequest(ws, data);
             break;
         }
         case RequestTypes.GetLogsResponse: {
-            handleGetLogsResponse(ws, data.slice(1));
+            handleGetLogsResponse(ws, data);
             break;
+        }
+        case RequestTypes.GetConfigRequest: {
+            handleGetConfigRequest(ws, data);
+            break;
+        }
+        case RequestTypes.GetConfigResponse: {
+            handleGetConfigResponse(ws, data);
+            break;
+        }
+        case RequestTypes.SetConfig: {
+            handleSetConfig(ws, data);
+        }
+        case RequestTypes.RebootNetwork: {
+            handleRebootNetwork(ws, data);
+        }
+        case RequestTypes.SaveConfig: {
+            handleSaveConfig(ws, data);
         }
     }
 }
@@ -275,63 +440,59 @@ function handleGetCurrentTimestamp(ws){
 
 /**
  * @param {WebSocketWithSession} ws 
- * @param {Buffer} data 
+ * @param {Buffer} payload 
  */
-function handleGetLogsRequest(ws, data){
-    if(ws.session.device_id !== 0){
-        console.error(`Error: Received Get Logs Request from a device with id ${ws.session.device_id}`);
-        return;
-    }
-    if(data.length !== 1){
-        console.error(`Error: invalid Get Logs Request Size: ${data.length} (expected 1)` );
-        return;
-    }
-    const get_only_important = data.readUInt8(0) === 1;
-    for(const device_id in connected_devices){
-        const device_ws = connected_devices[device_id];
-        sequenceManager.register_new(ws, (number) => {
-            const buffer = Buffer.allocUnsafe(1+4+1);
-            buffer.writeUInt8(RequestTypes.GetLogsRequest, 0);
-            buffer.writeUInt32LE(number, 1);
-            buffer.writeUInt8(+get_only_important, 5);
-            device_ws.send(buffer, err => {
-                if(err){
-                    console.error(`Error while sending Get Logs request`);
-                }else{
-                    console.log(`Sent Get Logs request to device with id ${device_id} (${device_ws.session.device_id})`);
-                }
-            });
-        });
-    }
+function handleGetLogsRequest(ws, payload){
+    handleForwardDefault(ws, "Get Logs Request", 2, payload);
 }
 
 /**
  * @param {WebSocketWithSession} ws 
- * @param {Buffer} data 
+ * @param {Buffer} payload 
  */
- function handleGetLogsResponse(ws, data){
-    if(ws.session.device_id === 0){
-        console.error(`Error: Received Get Logs Response from a non-device`);
-        return;
-    }
-    if(data.length < 9){
-        console.error(`Error: invalid Get Logs Response Size: ${data.length} (expected >= 9)` );
-        return;
-    }
-    const seq = data.readUInt32LE(0);
-    const client_ws = sequenceManager.release(seq);
-    if(!client_ws){
-        console.error(`Error: Received Unregistered Seq Number: ${seq}`);
-        return;
-    }
-    data.writeUInt8(RequestTypes.GetLogsResponse, 3);
-    client_ws.send(data.slice(3), err =>{
-        if(err){
-            console.error(`Error while sending Get Logs Response`);
-        }
-    })
+ function handleGetLogsResponse(ws, payload){
+    handleForwardBackDefault(ws, "Get Logs Response", 10, payload, false);
 }
 
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} payload 
+ */
+ function handleGetConfigRequest(ws, payload){
+    handleForwardDefault(ws, "Get Config Request", 1, payload);
+}
+
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} payload 
+ */
+ function handleGetConfigResponse(ws, payload){
+    handleForwardBackDefault(ws, "Get Config Response", 1+4+4+DEVICE_CONFIG_LEN, payload);
+}
+
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} payload 
+ */
+function handleSetConfig(ws, payload){
+    handleForwardDefaultNoSeq(ws, "Set Config", 1 + DEVICE_CONFIG_LEN, payload);
+}
+
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} payload 
+ */
+function handleRebootNetwork(ws, payload){
+    handleForwardDefaultNoSeq(ws, "Reboot Network", 1, payload);
+}
+
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} payload 
+ */
+function handleSaveConfig(ws, payload){
+    handleForwardDefaultNoSeq(ws, "Save Config", 1, payload);
+}
 
 
 const wss = new WebSocketServer({server});

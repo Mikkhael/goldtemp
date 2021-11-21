@@ -6,7 +6,9 @@
 #include <ESP8266WiFi.h>
 #include <WebSocketsClient.h>
 #include <ESP_EEPROM.h>
+#include <ESPTelnet.h>
 
+ESPTelnet telnet;
 void set_new_measurement_interval(const uint64_t);
 
 //// CONFIG /////////////////////
@@ -22,6 +24,9 @@ struct Config{
   uint64_t SAMPLE_INTERVAL = 0;
 };
 static_assert(sizeof(Config) == 32+32+102 + 2 + 8);
+
+constexpr char AP_SSID[] = "ESP GOLDTEMP";
+constexpr char AP_PASS[] = "1234abcd";
 
 struct ConfigWithWsPayload{
   char payload_header_padding[24];
@@ -113,6 +118,26 @@ uint64_t get_current_timestamp(){
   return current_timestamp_base;
 }
 
+struct TelnetPrint : public Print{
+  ESPTelnet& telnet;
+  size_t write(uint8_t value) override{
+    telnet.print(value);
+    return 1;
+  }
+  size_t write(const uint8_t* str, size_t len) override{
+    String s;
+    s.reserve(len);
+    s.concat((const char*)str, len);
+    telnet.print(s);
+    return len;
+  }
+  TelnetPrint(ESPTelnet& telnet)
+    : telnet(telnet)
+  {}
+};
+
+TelnetPrint telnetPrint(telnet);
+
 template<uint32_t TBUF_SIZE>
 struct StrBuf : public Print{
   static constexpr auto BUF_SIZE = TBUF_SIZE;
@@ -129,8 +154,10 @@ struct StrBuf : public Print{
   void print_to_serial(){
     if(buf_overflow){
       Serial.write(buf+buf_end, BUF_SIZE - buf_end);
+      telnetPrint.write((const uint8_t*)(buf+buf_end), BUF_SIZE - buf_end);
     }
     Serial.write(buf, buf_end);
+    telnetPrint.write((const uint8_t*)buf, buf_end);
   }
   
   size_t write(uint8_t value) override{
@@ -167,6 +194,7 @@ template<bool IS_IMPORTANT = false, typename T, typename ... Ts>
 inline void logp(const T& arg, const Ts& ... args){
 	Serial.print(arg);
   log_buffer.print(arg);
+  telnetPrint.print(arg);
   if constexpr(IS_IMPORTANT){
     important_log_buffer.print(arg);
   }
@@ -201,7 +229,7 @@ void net_status_update(bool force = false){
   static bool last_wifi_status = false;
   if(WiFi.status() == WL_CONNECTED){
     if(last_wifi_status == false || force){
-      logln<true>("WiFi Connected");
+      logln<true>("WiFi Connected. ", WiFi.localIP());
     }
   }else{
     if(last_wifi_status == true || force){
@@ -636,6 +664,29 @@ void big_test_routine(uint64_t d_count, uint64_t m_count){
   Serial.println("DONE");
 }
 
+//// TELNET ///////////////////////////////////
+
+String last_telnet_command;
+
+void telnet_begin(){
+  telnet.onConnect([](String ip){
+    logln<true>("Telnet connection: ", ip);
+  });
+  telnet.onConnectionAttempt([](String ip){
+    logln<true>("Telnet connection attempt: ", ip);
+  });
+  telnet.onReconnect([](String ip){
+    logln<true>("Telnet reconnect: ", ip);
+  });
+  telnet.onDisconnect([](String ip){
+    logln<true>("Telnet disconnect: ", ip);
+  });
+  telnet.onInputReceived([](String str){
+    last_telnet_command = str;
+  });
+  telnet.begin();
+}
+
 //// SETUP AND LOOP ///////////////////////////
 
 void show_config(){
@@ -659,8 +710,10 @@ void EEPROM_init(){
 }
 
 void reboot_network(){
-  logln("Connecting to WiFi...");
+  telnet.stop();
+  ws.disconnect();
   WiFi.disconnect();
+  logln("Connecting to WiFi...");
   WiFi.begin(cfg.CRED_SSID, cfg.CRED_PASS);
   wait_for_wifi_to_connect();
   ws_begin();
@@ -671,8 +724,11 @@ void setup(void)
 {
   Serial.begin(115200);
   Serial.println();
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(AP_SSID, AP_PASS);
   EEPROM_init();
   reboot_network();
+  telnet_begin();
   set_new_measurement_interval(cfg.SAMPLE_INTERVAL);
   rescan_devices_with_log();
 }
@@ -744,7 +800,7 @@ void set_new_measurement_interval(const uint64_t new_interval){
   logln<true>("Changed Measurement Sample Interval to ", new_interval, "ms.");
 }
 
-bool handle_command(String command){
+bool handle_command(String& command){
   logln("Command: ", command);
   if(command == "scan"){
     rescan_devices_with_log();
@@ -791,9 +847,11 @@ bool handle_command(String command){
     logln("Save Config Status: ", res);
   }else if(command == "log"){
     Serial.println("=== LOGS  ===");
+    telnetPrint.println("=== LOGS  ===");
     log_buffer.print_to_serial();
   }else if(command == "log!"){
     Serial.println("=== LOGS! ===");
+    telnetPrint.println("=== LOGS! ===");
     important_log_buffer.print_to_serial();
   }else if(command == "prepare"){
     measurements.prepare_payload();
@@ -831,8 +889,12 @@ void loop(void)
     String command = Serial.readStringUntil('\n');
     Serial.read();
     handle_command(command);
+  }else if(last_telnet_command.length() > 0){
+    handle_command(last_telnet_command);
+    last_telnet_command = "";
   }
   ws.loop();
+  telnet.loop();
   current_timestamp_refresh();
   net_update_interval();
   measurement_routine_interval();

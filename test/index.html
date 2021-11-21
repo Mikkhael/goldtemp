@@ -34,6 +34,8 @@
     <button onclick="postNewTemperatures()">Post New Temperatures</button>
     <button onclick="getLastMeasurements()">Get Last Measurements</button>
     <button onclick="setNewSampleInterval()">Set New Sample Interval</button>
+    <button onclick="getLastLogs(false)">Get Last Logs</button>
+    <button onclick="getLastLogs(true)">Get Last Important Logs</button>
     
     <br />
     
@@ -45,6 +47,8 @@
     <div id="messages">
         
     </div>
+    
+    <pre id="logs"></pre>
     
 <script>
 //@ts-check
@@ -84,6 +88,8 @@ function createSocket(address){
                 let view = new DataView(buffer);
                 if(view.getUint8(0) == 20){
                     handleLastMeasurements(view);
+                }else if(view.getUint8(0) == 51){
+                    handleLastLogs(view);
                 }
             })
         }else{
@@ -184,6 +190,28 @@ function setNewSampleInterval(){
     view.setUint8(0, 30);
     view.setBigUint64(1, value, true);
     socket.send(buffer);
+}
+
+function getLastLogs(important){
+    const buffer = Uint8Array.from([50, important ? 1 : 0]);
+    socket.send(buffer);
+}
+
+function handleLastLogs(view){
+    const important = view.getUint8(1);
+    const device_id = view.getUint32(2, true);
+    let arr = Array.from(new Uint8Array(view.buffer));
+    console.log(arr);
+    arr.splice(0, 1+1+4);
+    console.log(arr);
+    let null_index = arr.indexOf(0);
+    console.log(null_index);
+    if(null_index >= 0){
+        let arr2 = arr.splice(0, null_index+1);
+        console.log(arr2);
+        arr = [...arr, ...arr2];
+    }
+    document.getElementById('logs').innerHTML = arr.map(x => String.fromCharCode(x)).join('');
 }
 
 </script>

@@ -35,6 +35,11 @@ app.get('/', (req, res) => {
 // WEBSOCKETS
 
 /*
+
+Register As ESP Device:
+    - uint8 requrest_type (1)
+    - uint32 device_id 
+
 Post New Tmeperatures Request Body Format:
     - uint8  request_type (10)
     - uint32 device_id
@@ -62,21 +67,48 @@ Get Current Timestamp:
 Response:
     - uint8  request_type (40)
     - uint64 current_timestamp
+    
+    
+Get Logs:
+    - uint8 request_type (50)
+    [ - uint32 seq (Server <-> ESP) ]
+    - uint8 get_only_important (0|1)
+Response:
+    - uint8 response_type (51)
+    [ - uint32 seq (ESP <-> Server) ]
+    - uint8 is_only_important (0|1)
+    - uint32 device_id
+    - char[] data
 */
 
-/**@type {WebSocket[]} */
-const connected_clients = [];
+class WebSocketSession{
+    /**@typedef {WebSocket & {session: WebSocketSession}} WebSocketWithSession */
+    constructor(){
+        this.device_id = 0;
+    }
+}
+
+const SequenceManager = require('./SequenceManager');
+const sequenceManager = new SequenceManager;
+
+
+
+/**@type {Object.<number, WebSocketWithSession>} */
+const connected_devices = {};
 
 const RequestTypes = {
+    RegisterAsDevice: 1,
     PostNewTemperatures: 10,
     GetLastMeasurements: 20,
     SetSampleFrequency: 30,
-    GetCurrentTimestamp: 40
+    GetCurrentTimestamp: 40,
+    GetLogsRequest: 50,
+    GetLogsResponse: 51
 };
 Object.freeze(RequestTypes);
 
 /**
- * @param {WebSocket} ws
+ * @param {WebSocketWithSession} ws
  * @param {Buffer} data 
  * @param {Boolean} isBinary 
  */
@@ -89,6 +121,11 @@ function handleMessage(ws, data, isBinary){
     }
     const request_type = data.readUInt8(0);
     switch(request_type){
+        case RequestTypes.RegisterAsDevice: {
+            const device_id = data.readUInt32LE(1);
+            registerNewDevice(device_id, ws);
+            break;
+        }
         case RequestTypes.PostNewTemperatures: {
             handlePostNewTemperatures(ws, data.slice(1));
             break;
@@ -105,11 +142,28 @@ function handleMessage(ws, data, isBinary){
             handleGetCurrentTimestamp(ws);
             break;
         }
+        case RequestTypes.GetLogsRequest: {
+            handleGetLogsRequest(ws, data.slice(1));
+            break;
+        }
+        case RequestTypes.GetLogsResponse: {
+            handleGetLogsResponse(ws, data.slice(1));
+            break;
+        }
     }
 }
 
 /**
- * @param {WebSocket} ws
+ * @param {number} device_id 
+ * @param {WebSocketWithSession} ws 
+ */
+function registerNewDevice(device_id, ws){
+    ws.session.device_id = device_id;
+    connected_devices[device_id] = ws;
+}
+
+/**
+ * @param {WebSocketWithSession} ws
  * @param {Buffer} data 
  */
 function handlePostNewTemperatures(ws, data){
@@ -166,7 +220,7 @@ function invalidPostNewTemperatureRequest(ws, data, reason){
 }
 
 /**
- * @param {WebSocket} ws 
+ * @param {WebSocketWithSession} ws 
  */
 function handleGetLastMeasurements(ws){
     db.get_last_measurements(function(err, result) {
@@ -187,13 +241,14 @@ function handleGetLastMeasurements(ws){
 }
 
 /**
- * @param {WebSocket} ws 
+ * @param {WebSocketWithSession} ws 
  * @param {Buffer} payload
  */
 function handleSetSampleFrequency(ws, payload){
     const newInterval = payload.readBigUInt64LE(1);
-    console.log(`Setting sample frequency of ${connected_clients.length} clients to ${newInterval}.`);
-    for(let client of connected_clients){
+    console.log(`Setting sample frequency of ${Object.keys(connected_devices).length} clients to ${newInterval}.`);
+    for(let client_id in connected_devices){
+        const client = connected_devices[client_id];
         client.send(payload, err => {
             if(err){
                 console.error(`Error while sending Set Sample Frequency Request: `, err);
@@ -203,7 +258,7 @@ function handleSetSampleFrequency(ws, payload){
 }
 
 /**
- * @param {WebSocket} ws 
+ * @param {WebSocketWithSession} ws 
  */
 function handleGetCurrentTimestamp(ws){
     const timestamp = BigInt(Date.now())/1000n;
@@ -218,17 +273,78 @@ function handleGetCurrentTimestamp(ws){
     });
 }
 
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} data 
+ */
+function handleGetLogsRequest(ws, data){
+    if(ws.session.device_id !== 0){
+        console.error(`Error: Received Get Logs Request from a device with id ${ws.session.device_id}`);
+        return;
+    }
+    if(data.length !== 1){
+        console.error(`Error: invalid Get Logs Request Size: ${data.length} (expected 1)` );
+        return;
+    }
+    const get_only_important = data.readUInt8(0) === 1;
+    for(const device_id in connected_devices){
+        const device_ws = connected_devices[device_id];
+        sequenceManager.register_new(ws, (number) => {
+            const buffer = Buffer.allocUnsafe(1+4+1);
+            buffer.writeUInt8(RequestTypes.GetLogsRequest, 0);
+            buffer.writeUInt32LE(number, 1);
+            buffer.writeUInt8(+get_only_important, 5);
+            device_ws.send(buffer, err => {
+                if(err){
+                    console.error(`Error while sending Get Logs request`);
+                }else{
+                    console.log(`Sent Get Logs request to device with id ${device_id} (${device_ws.session.device_id})`);
+                }
+            });
+        });
+    }
+}
+
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} data 
+ */
+ function handleGetLogsResponse(ws, data){
+    if(ws.session.device_id === 0){
+        console.error(`Error: Received Get Logs Response from a non-device`);
+        return;
+    }
+    if(data.length < 9){
+        console.error(`Error: invalid Get Logs Response Size: ${data.length} (expected >= 9)` );
+        return;
+    }
+    const seq = data.readUInt32LE(0);
+    const client_ws = sequenceManager.release(seq);
+    if(!client_ws){
+        console.error(`Error: Received Unregistered Seq Number: ${seq}`);
+        return;
+    }
+    data.writeUInt8(RequestTypes.GetLogsResponse, 3);
+    client_ws.send(data.slice(3), err =>{
+        if(err){
+            console.error(`Error while sending Get Logs Response`);
+        }
+    })
+}
+
 
 
 const wss = new WebSocketServer({server});
-wss.on('connection', function(ws, req) {
+wss.on('connection', function(/**@type {WebSocketWithSession} */ws, req) {
+    ws.session = new WebSocketSession();
     console.log(`New WebSocket Connection:`, ws.url);
     const socket = req.socket;
     console.log(`Socket info`, `${socket.localAddress}:${socket.localPort}`, `${socket.remoteAddress}:${socket.remotePort}`);
     ws.on('close', function(number, reason){
         console.log(`WebSocket Connection Closed:`, number , reason);
-        const i = connected_clients.indexOf(ws);
-        connected_clients.splice(i, i > -1 ? 1 : 0);
+        if(connected_devices[ws.session.device_id] === ws){
+            delete connected_devices[ws.session.device_id];
+        }
     });
     ws.on('error', function(err){
         console.error(`WebSocket Error:`, err);
@@ -247,7 +363,6 @@ wss.on('connection', function(ws, req) {
         }
         handleMessage(ws, /**@type {Buffer}*/ (data), isBinary);
     });
-    connected_clients.push(ws);
 });
 
 server.listen(PORT, () => {

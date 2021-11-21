@@ -5,6 +5,7 @@
 #include <DallasTemperature.h>
 #include <ESP8266WiFi.h>
 #include <WebSocketsClient.h>
+#include <type_traits>
 
 //// CONFIG /////////////////////
 
@@ -24,7 +25,6 @@ constexpr char WS_URL[] = "/";
 constexpr int  WS_HB_INTERVAL = 1000 * 15;
 
 uint32_t  DEVICE_ID = 100;
-int  TEMP_REFRESH = (1000 * 60 * 1);
 
 //// LOGGER AND TIME ///////////////////
 
@@ -47,16 +47,72 @@ uint64_t get_current_timestamp(){
   return current_timestamp_base;
 }
 
-template<typename T, typename ... Ts>
+template<uint32_t TBUF_SIZE>
+struct StrBuf : public Print{
+  static constexpr auto BUF_SIZE = TBUF_SIZE;
+  static constexpr auto PAYLOAD_HEADER_SIZE = 14 + 1 + 4 + 1 + 4;
+  char buf_with_ws_payload[PAYLOAD_HEADER_SIZE + BUF_SIZE + 1] {};
+  char* buf = buf_with_ws_payload + PAYLOAD_HEADER_SIZE;
+  uint32_t buf_end = 0;
+  bool buf_overflow = false;
+
+  size_t get_payload_length(){
+    return PAYLOAD_HEADER_SIZE - 14 + (buf_overflow ? BUF_SIZE : buf_end);
+  }
+
+  void print_to_serial(){
+    if(buf_overflow){
+      Serial.write(buf+buf_end, BUF_SIZE - buf_end);
+    }
+    Serial.write(buf, buf_end);
+  }
+  
+  size_t write(uint8_t value) override{
+    buf[buf_end] = value;
+    buf_end++;
+    if(buf_end >= BUF_SIZE){
+      buf_overflow = true;
+      buf_end = 0;
+    }
+    buf[buf_end] = 0;
+    return 1;
+  }
+  size_t write(const uint8_t* str, size_t len) override{
+    if(len <= 0)
+      return 0;
+    const auto left = BUF_SIZE - buf_end;
+    if(len > left){
+      memcpy(buf + buf_end, str, left);
+      buf_end = 0;
+      buf_overflow = true;
+      return len + write(str + left, len - left);
+    }
+    memcpy(buf + buf_end, str, len);
+    buf_end = (buf_end + len) % BUF_SIZE;
+    buf[buf_end] = 0;
+    return len;
+  }
+};
+
+StrBuf<5000> log_buffer;
+StrBuf<2000> important_log_buffer;
+
+template<bool IS_IMPORTANT = false, typename T, typename ... Ts>
 inline void logp(const T& arg, const Ts& ... args){
 	Serial.print(arg);
-	logp(args...);
+  log_buffer.print(arg);
+  if constexpr(IS_IMPORTANT){
+    important_log_buffer.print(arg);
+  }
+	logp<IS_IMPORTANT>(args...);
 }
+template<bool>
 inline void logp(){}
-template<typename ... Ts>
+
+template<bool IS_IMPORTANT = false, typename ... Ts>
 inline void logln( const Ts& ... args ){
   const auto now = get_current_timestamp();
-	logp(now, "| ", args ..., '\n');
+	logp<IS_IMPORTANT>(now, "| ", args ..., '\n');
 }
 
 //// WIFI /////////////////////
@@ -77,11 +133,11 @@ void net_status_update(bool force = false){
   static bool last_wifi_status = false;
   if(WiFi.status() == WL_CONNECTED){
     if(last_wifi_status == false || force){
-      logln("WiFi Connected");
+      logln<true>("WiFi Connected");
     }
   }else{
     if(last_wifi_status == true || force){
-      logln("WiFi Disconnected: ", WiFi.status());
+      logln<true>("WiFi Disconnected: ", WiFi.status());
     }
   }
   last_wifi_status = (WiFi.status() == WL_CONNECTED);
@@ -126,15 +182,18 @@ void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
   switch(type) {
     case WStype_DISCONNECTED:{
       if(ws_is_connected){
-        logln("[WSc] Disconnected!");
+        logln<true>("[WSc] Disconnected!");
         ws_is_connected = false;
       }
       break;
     }
     case WStype_CONNECTED: {
       ws_is_connected = true;
-      logln("[WSc] Connected to url: ", String((char*)payload));
-      ws.sendTXT("Connected");
+      uint8_t buffer[5];
+      buffer[0] = 1;
+      memcpy(buffer+1, &DEVICE_ID, 4);
+      logln<true>("[WSc] Connected");
+      ws.sendBIN(buffer, 5);
       break;
     }
     case WStype_TEXT:{
@@ -155,7 +214,20 @@ void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
         uint64_t new_timestamp;
         memcpy(&new_timestamp, payload+1, 8);
         set_current_timestamp(new_timestamp);
-        logln("Current timestamp set to: ", new_timestamp);
+        logln<true>("Current timestamp set to: ", new_timestamp);
+      }else if(payload[0] == 50 && length == 6){
+        char response_id = 51;
+        uint32_t seq;
+        uint8_t only_important;
+        memcpy(&seq, payload+1, 4);
+        memcpy(&only_important, payload+5, 1);
+        char* buf = only_important ? important_log_buffer.buf_with_ws_payload : log_buffer.buf_with_ws_payload;
+        auto len = only_important ? important_log_buffer.get_payload_length() : log_buffer.get_payload_length();
+        memcpy(buf + 14, &response_id, 1);
+        memcpy(buf + 14 + 1, &seq, 4);
+        memcpy(buf + 14 + 1 + 4, &only_important, 1);
+        memcpy(buf + 14 + 1 + 4 + 1, &DEVICE_ID, 4);
+        ws.sendBIN((uint8_t*)buf, len, true);
       }
       break;
     }
@@ -168,7 +240,7 @@ void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
         break;
     }
     case WStype_ERROR:{
-      logln("[WSc] error: ", String((char*)payload));
+      logln<true>("[WSc] error: ", String((char*)payload));
       break;
     }
     default:{
@@ -250,7 +322,7 @@ Post New Tmeperatures Request Body Format:
   }
   bool send_payload(){
     if(payload_length == 0){
-      logln("No payload prepared.");
+      logln<true>("No payload prepared.");
       return false;
     }
     return ws.sendBIN((uint8_t*)ws_payload, payload_length - 14, true);
@@ -288,7 +360,7 @@ Post New Tmeperatures Request Body Format:
 	bool set_value(uint64_t device_id, int16_t value){
     clear_payload();
 		if(commited_measurements >= MAX_MEASUREMENTS){
-			logln("Too many measurements");
+			logln<true>("Too many measurements");
 			return false;
 		}
 		size_t device_index = 0;
@@ -298,7 +370,7 @@ Post New Tmeperatures Request Body Format:
 			}
 		}
 		if(device_index >= MAX_DEVICES){
-			logln("Too many devices");
+			logln<true>("Too many devices");
 			return false;
 		}
 		else if(device_index >= tracked_devices){
@@ -311,7 +383,7 @@ Post New Tmeperatures Request Body Format:
 	bool commit(){
     clear_payload();
 		if(commited_measurements >= MAX_MEASUREMENTS){
-			logln("Cannot commit more measurements");
+			logln<true>("Cannot commit more measurements");
 			return false;
 		}
     measurements_times[commited_measurements] = ( is_timestamp_set() ? get_current_timestamp() : 0 );
@@ -351,7 +423,7 @@ bool rescan_devices(){
   sensors.begin();
   numberOfDevices = sensors.getDeviceCount();
   if(numberOfDevices <= 0 || numberOfDevices > MAX_DEVICES){
-    logln("Too many Devices found: ", numberOfDevices);
+    logln<true>("Too many Devices found: ", numberOfDevices);
     return false;
   }
 
@@ -371,12 +443,12 @@ void rescan_devices_with_log(){
   const auto t2 = millis();
   logln("Scan took ", t2-t1, "millis.");
   if(!res){
-    logln("Error occured during rescanning devices");
+    logln<true>("Error occured during rescanning devices");
     return;
   }
-  logln("Found ", numberOfDevices, " devices: ");
+  logln<true>("Found ", numberOfDevices, " devices: ");
   for(size_t i=0; i<numberOfDevices; i++){
-	logln(i, ": ", numAddresses[i]);
+	  logln(i, ": ", numAddresses[i]);
   }
 }
 
@@ -463,10 +535,10 @@ void big_test_routine(uint64_t d_count, uint64_t m_count){
   int16_t m = 10000;
   for(size_t i=0; i<m_count; i++){
     for(size_t j=0; j<d_count; j++){
-      Serial.printf("(%u,%u)",i,j);
+      //Serial.printf("(%u,%u)",i,j);
       measurements.set_value(77700000 + j, ++m );
     }
-    Serial.println();
+    Serial.println(i);
     measurements.commit();
   }
   Serial.println("DONE");
@@ -533,7 +605,7 @@ IntervalExecution measurement_routine_interval([]{
   if(complete_measurement_routine()){
     logln("Ok. ");
   }else{
-    logln("Measurement routine failed! ");
+    logln<true>("Measurement routine failed! ");
   }
   //auto t2 = millis();
   //logln("(", t2-t1, "ms)");
@@ -548,7 +620,69 @@ IntervalExecution current_timestamp_refresh([]{
 
 void set_new_measurement_interval(const uint64_t new_interval){
   measurement_routine_interval.update_interval(new_interval);
-  logln("Changed Measurement Sample Interval to ", new_interval, "ms.");
+  logln<true>("Changed Measurement Sample Interval to ", new_interval, "ms.");
+}
+
+bool handle_command(String command){
+  logln("Command: ", command);
+  if(command == "scan"){
+    rescan_devices_with_log();
+  }else if(command == "req"){
+    request_temperatures();
+  }else if(command == "get"){
+    getAllTemperatures();
+  }else if(command == "z"){
+    measurement_routine_interval.execute_now();
+  }else if(command == "s"){
+    bool res = measurements.send_all_measurements();
+    logln("Send status: ", res);
+  }else if(command == "print"){
+    measurements.print();
+  }else if(command == "send"){
+    bool res = measurements.send_payload();
+    logln("Sent payload with status: ", res);
+  }else if(command == "sendflush"){
+    logln("Flushing records: ", measurements.payloaded_measurements);
+    measurements.commited_measurements -= measurements.payloaded_measurements;
+  }else if(command == "clearpayload"){
+    measurements.clear_payload();
+    logln("Cleared payload");
+  }else if(command == "clear"){
+    measurements.clear();
+  }else if(command == "test"){
+    test_routine();
+  }else if(command == "test0"){
+    big_test_routine(Measurements::MAX_DEVICES, Measurements::MAX_MEASUREMENTS);
+  }else if(command == "test1"){
+    big_test_routine(Measurements::MAX_DEVICES-1, Measurements::MAX_MEASUREMENTS-1);
+  }else if(command == "test2"){
+    big_test_routine(Measurements::MAX_DEVICES, Measurements::MAX_MEASUREMENTS-1);
+  }else if(command == "test3"){
+    big_test_routine(Measurements::MAX_DEVICES-1, Measurements::MAX_MEASUREMENTS);
+  }else if(command == "test4"){
+    big_test_routine(Measurements::MAX_DEVICES/2, Measurements::MAX_MEASUREMENTS/2);
+  }else if(command == "log"){
+    Serial.println("=== LOGS  ===");
+    log_buffer.print_to_serial();
+  }else if(command == "log!"){
+    Serial.println("=== LOGS! ===");
+    important_log_buffer.print_to_serial();
+  }else if(command == "prepare"){
+    measurements.prepare_payload();
+    logln("Prepared payload.");
+  }else if(command.startsWith("int")){
+    int new_interval = command.substring(3).toInt();
+    measurement_routine_interval.update_interval(new_interval);
+    logln("Set new interval to ", new_interval);
+  }else if(command == "wstestsend"){
+    String data = command.substring(10);
+    auto res = ws.sendTXT(data);
+    logln("Test Sending Status: ", res);
+  }else{
+    logln("Unknown command: ", command);
+    return false;
+  }
+  return true;
 }
 
 void loop(void)
@@ -556,62 +690,7 @@ void loop(void)
   if(Serial.available()){
     String command = Serial.readStringUntil('\n');
     Serial.read();
-    Serial.print("Command: ");
-    Serial.println(command);
-    if(command == "scan"){
-      rescan_devices_with_log();
-    }else if(command == "req"){
-      request_temperatures();
-    }else if(command == "get"){
-      getAllTemperatures();
-    }else if(command == "z"){
-      measurement_routine_interval.execute_now();
-    }else if(command == "s"){
-      bool res = measurements.send_all_measurements();
-      logln("Send status: ", res);
-    }else if(command == "print"){
-      measurements.print();
-    }else if(command == "send"){
-      bool res = measurements.send_payload();
-      logln("Sent payload with status: ", res);
-    }else if(command == "sendflush"){
-      logln("Flushing records: ", measurements.payloaded_measurements);
-      measurements.commited_measurements -= measurements.payloaded_measurements;
-    }else if(command == "clearpayload"){
-      measurements.clear_payload();
-      logln("Cleared payload");
-    }else if(command == "clear"){
-      measurements.clear();
-    }else if(command == "test"){
-      test_routine();
-    }else if(command == "test0"){
-      big_test_routine(Measurements::MAX_DEVICES, Measurements::MAX_MEASUREMENTS);
-    }else if(command == "test1"){
-      big_test_routine(Measurements::MAX_DEVICES-1, Measurements::MAX_MEASUREMENTS-1);
-    }else if(command == "test2"){
-      big_test_routine(Measurements::MAX_DEVICES, Measurements::MAX_MEASUREMENTS-1);
-    }else if(command == "test3"){
-      big_test_routine(Measurements::MAX_DEVICES-1, Measurements::MAX_MEASUREMENTS);
-    }else if(command == "test4"){
-      big_test_routine(Measurements::MAX_DEVICES/2, Measurements::MAX_MEASUREMENTS/2);
-    }else if(command == "prepare"){
-      measurements.prepare_payload();
-      logln("Prepared payload.");
-    }else if(command == "int"){
-      String data = Serial.readStringUntil('\n');
-      Serial.read();
-      int new_interval = data.toInt();
-      measurement_routine_interval.update_interval(new_interval);
-      logln("Set new interval to ", new_interval);
-    }else if(command == "wstestsend"){
-      String data = Serial.readStringUntil('\n');
-      Serial.read();
-      auto res = ws.sendTXT(data);
-      logln("Test Sending Status: ", res);
-    }else{
-      Serial.print("Unknown command: ");
-      Serial.println(command);
-    }
+    handle_command(command);
   }
   ws.loop();
   current_timestamp_refresh();

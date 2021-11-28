@@ -25,6 +25,11 @@ struct Config{
 };
 static_assert(sizeof(Config) == 32+32+102 + 2 + 8);
 
+const int WS_Reconnect_Interval = 5000;
+
+// House Debun Config
+// cfg1TP-LINK_FD2F53,242936961,3192.168.0.101
+
 constexpr char AP_SSID[] = "ESP GOLDTEMP";
 constexpr char AP_PASS[] = "1234abcd";
 
@@ -271,8 +276,45 @@ uint64_t addressToUint(const DeviceAddress deviceAddress)
 
 //// WebSockets ////////////////////
 
+void ws_begin();
+
 WebSocketsClient ws;
 bool ws_is_connected = false;
+
+uint64_t sleep_duration = 0;
+uint64_t sleep_start = 0;
+
+bool is_sleeping(){
+  return sleep_duration != 0;
+}
+
+void stop_sleeping(){
+  logln<true>("Stopping sleeping");
+  sleep_duration = 0;
+  sleep_start = 0;
+  if(!ws_is_connected){
+    ws_begin();
+  }
+}
+
+void check_sleeping(){
+  if(is_sleeping()){
+    const uint64_t now = millis();
+    if(now - sleep_start >= sleep_duration){
+      stop_sleeping();
+    }
+  }
+}
+
+void start_sleeping(uint64_t duration){
+  logln<true>("Starting sleeping for ", float(duration) / 1000 / 60, " minutes");
+  sleep_duration = duration;
+  sleep_start = millis();
+  ws.disconnect();
+  ws.begin("",0);
+}
+
+
 void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
   switch(type) {
     case WStype_DISCONNECTED:{
@@ -347,6 +389,10 @@ void wsEventHandler(WStype_t type, uint8_t* payload, size_t length){
           logln<true>("Failed to save Config");
         }
         logln<true>("EEPROM usage: ", EEPROM.percentUsed());
+      }else if(payload[0] == 80 && length == 9){
+        uint64_t sleep_duration;
+        memcpy(&sleep_duration, payload+1, 8);
+        start_sleeping(sleep_duration);
       }
       break;
     }
@@ -372,7 +418,7 @@ void ws_begin(){
   ws.disconnect();
   ws.begin(cfg.WS_HOST, cfg.WS_PORT, "/");
   ws.onEvent(wsEventHandler);
-  ws.setReconnectInterval(5000);
+  ws.setReconnectInterval(WS_Reconnect_Interval);
   ws.enableHeartbeat(WS_HB_INTERVAL, 3000, 2);
 }
 
@@ -433,7 +479,7 @@ Post New Tmeperatures Request Body Format:
     //logln("DEBUG: ", sizeof(ws_payload), " ", payloaded_measurements, " ", commited_measurements, " ", measurements_diff, " ", MAX_PAYLOAD_MEASUREMENTS_SIZE, " ", MAX_PAYLOAD_SIZE);
 
     //commited_measurements -= payload_length;
-    logln("Preparing took ", t2-t1, " millis. Payload length: ", payload_length);
+    //logln("Preparing took ", t2-t1, " millis. Payload length: ", payload_length);
   }
 
   void clear_payload(){
@@ -573,10 +619,10 @@ void rescan_devices_with_log(){
 }
 
 void request_temperatures(){
-  const auto t1 = millis();
+  //const auto t1 = millis();
   sensors.requestTemperatures();
-  const auto t2 = millis();
-  logln("Measurement took ", t2-t1, " millis.");
+  //const auto t2 = millis();
+  //logln("Measurement took ", t2-t1, " millis.");
 }
 
 bool getTemperature(DeviceAddress deviceAddress, int16_t& result){
@@ -603,13 +649,13 @@ bool getAllTemperatures(){
     logln(numAddresses[i], ": ", raw_to_c(value), " [", value , res ? "] (" : "]err (", t2 - t1, ")");
   }
   if(!measurements.commit()){
-	return false;
+	  return false;
   }
   return true;
 }
 
 bool complete_measurement_routine(){
-  measurements.clear();
+  //measurements.clear();
   rescan_devices();
   request_temperatures();
   if(!getAllTemperatures()) return false;
@@ -716,6 +762,7 @@ void reboot_network(){
   logln("Connecting to WiFi...");
   WiFi.begin(cfg.CRED_SSID, cfg.CRED_PASS);
   wait_for_wifi_to_connect();
+  telnet_begin();
   ws_begin();
   net_status_update(true);
 }
@@ -853,13 +900,21 @@ bool handle_command(String& command){
     Serial.println("=== LOGS! ===");
     telnetPrint.println("=== LOGS! ===");
     important_log_buffer.print_to_serial();
+  }else if(command == "ip"){
+    logln<true>("IP: ", WiFi.localIP());
   }else if(command == "prepare"){
     measurements.prepare_payload();
     logln("Prepared payload.");
+  }else if(command == "stopsleep"){
+    stop_sleeping();
   }else if(command.startsWith("wstestsend")){
     String data = command.substring(10);
     auto res = ws.sendTXT(data);
     logln("Test Sending Status: ", res);
+  }else if(command.startsWith("sleep")){
+    String data = command.substring(5);
+    auto duration = data.toInt();
+    start_sleeping(duration);
   }else if(command.startsWith("int")){
     int new_interval = command.substring(3).toInt();
     measurement_routine_interval.update_interval(new_interval);
@@ -893,6 +948,7 @@ void loop(void)
     handle_command(last_telnet_command);
     last_telnet_command = "";
   }
+  check_sleeping();
   ws.loop();
   telnet.loop();
   current_timestamp_refresh();

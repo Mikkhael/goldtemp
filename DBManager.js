@@ -4,6 +4,7 @@ const mysql = require('mysql2');
 const DB_CRED = require('./db_credentials');
 
 const table_name = process.env['DEBUG_MODE'] == '1' ? "measurements_test" : "measurements";
+const config_table_name = process.env['DEBUG_MODE'] == '1' ? "config_test" : "config";
 
 class DBManager{
     constructor(){
@@ -43,19 +44,19 @@ class DBManager{
         return this.connection && this.connection.authorized && this.connection;
     }
     
-    #_reconnect_if_nessesary(next_error, next_good){
-        if(!this.is_connected()){
-            console.log("Connection disconnected. Reconnecting...");
-            this.reconnect(function(err){
-                if(err){
-                    next_error(err);
-                    return;
-                }
-                next_good();
-            });
-            return;
-        }
-    }
+    // #_reconnect_if_nessesary(next_error, next_good){
+    //     if(!this.is_connected()){
+    //         console.log("Connection disconnected. Reconnecting...");
+    //         this.reconnect(function(err){
+    //             if(err){
+    //                 next_error(err);
+    //                 return;
+    //             }
+    //             next_good();
+    //         });
+    //         return;
+    //     }
+    // }
     
     /**
      * 
@@ -85,7 +86,7 @@ class DBManager{
      * @param {number[]} values 
      */
     insert_new_measurements(times, thermometers_ids, values, next = function(err){}){
-        this.#_reconnect_if_nessesary(next, this.insert_new_measurements.bind(this, ...arguments));
+        //this.#_reconnect_if_nessesary(next, this.insert_new_measurements.bind(this, ...arguments));
         const NO_VALUE = -200;
         let query = `INSERT INTO ${table_name} (time, thermometer_id, value) VALUES `;
         for(let time_i=0; time_i<times.length; time_i++){
@@ -109,7 +110,7 @@ class DBManager{
     }
     
     get_last_measurements(next = function(err, result){}){
-        this.#_reconnect_if_nessesary(next, this.get_last_measurements.bind(this, ...arguments));
+        //this.#_reconnect_if_nessesary(next, this.get_last_measurements.bind(this, ...arguments));
         const query =
         `SELECT m.thermometer_id as id, m.time, MAX(m.value) as value FROM ${table_name} AS m JOIN(
          SELECT MAX(m.time) AS time, m.thermometer_id AS id FROM ${table_name} AS m GROUP BY m.thermometer_id
@@ -117,6 +118,30 @@ class DBManager{
         this.query_with_reconnect(query, function(err, result, fields){
             if(err){
                 console.error("Error while performing get_last_measurements query: ", err);
+                next(err);
+            }
+            next(err, result);
+        });
+    }
+    
+    get_sleep_config(next = function(err, result){}){
+        //this.#_reconnect_if_nessesary(next, this.get_sleep_config.bind(this, ...arguments));
+        const query = `SELECT sleep_start_minutes, sleep_duration_minutes FROM ${config_table_name} LIMIT 1`;
+        
+        this.query_with_reconnect(query, function(err, result, fields){
+            if(err){
+                console.error("Error while performing get_sleep_config query: ", err);
+                next(err);
+            }
+            next(err, result);
+        });
+    }
+    
+    set_sleep_config(sleep_start_minutes, sleep_duration_minutes, next = function(err, result){}){
+        const query = `UPDATE ${config_table_name} SET sleep_start_minutes=${sleep_start_minutes}, sleep_duration_minutes=${sleep_duration_minutes} WHERE 1`;
+        this.query_with_reconnect(query, function(err, result, fields){
+            if(err){
+                console.error("Error while performing set_sleep_config query: ", err);
                 next(err);
             }
             next(err, result);

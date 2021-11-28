@@ -99,6 +99,16 @@ Reboot Network:
 Save Config:
     - uint8 request_type 72
     
+    
+Start Sleeping:
+    - uint8 request_type 80
+    - uint64 duration_ms
+    
+Set Sleeping Time:
+    - uint8 request_type 81
+    - uint16 start_minutes
+    - uint16 duration_minutes
+    
 */
 
 const DEVICE_CONFIG_LEN = 32+32+102+2+8;
@@ -107,6 +117,8 @@ class WebSocketSession{
     /**@typedef {WebSocket & {session: WebSocketSession}} WebSocketWithSession */
     constructor(){
         this.device_id = 0;
+        this.remote_address = "?";
+        this.local_address = "?";
     }
 }
 
@@ -251,7 +263,9 @@ const RequestTypes = {
     GetConfigResponse: 61,
     SetConfig: 70,
     RebootNetwork: 71,
-    SaveConfig: 72
+    SaveConfig: 72,
+    StartSleeping: 80,
+    SetSleepingTime: 81,
 };
 Object.freeze(RequestTypes);
 
@@ -308,12 +322,27 @@ function handleMessage(ws, data, isBinary){
         }
         case RequestTypes.SetConfig: {
             handleSetConfig(ws, data);
+            break;
         }
         case RequestTypes.RebootNetwork: {
             handleRebootNetwork(ws, data);
+            break;
         }
         case RequestTypes.SaveConfig: {
             handleSaveConfig(ws, data);
+            break;
+        }
+        // case RequestTypes.StartSleeping: {
+        //     handleStartSleeping(ws, data);
+        //     break;
+        // }
+        case RequestTypes.SetSleepingTime: {
+            handleSetSleepingTime(ws, data);
+            break;
+        }
+        default: {
+            console.log(`Unrecoqnized payload from ${ws.session.remote_address}`, data);
+            break;
         }
     }
 }
@@ -495,12 +524,81 @@ function handleSaveConfig(ws, payload){
 }
 
 
+/// Sleeping
+
+const SleepingManager = require('./SleepingManager');
+const sleepingManager = new SleepingManager();
+
+
+function refresh_sleeping_config(){
+    db.get_sleep_config((err, result) => {
+        if(err){
+            console.error("Error while getting sleep config from database: ", err);
+            return;
+        }
+        
+        if(result.length < 1){
+            console.error("No Sleep Config present in the Database");
+            result[0] = {};
+        }
+        
+        sleepingManager.set_sleep_time(
+            result[0].sleep_start_minutes || 0,
+            result[0].sleep_duration_minutes || 0
+        );
+    });
+}
+
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} payload 
+ */
+function handleSetSleepingTime(ws, payload){
+    if(payload.length != 5){
+        console.error(`Error: invalid SetSleepingTimeRequest Size: ${payload.length} (expected 5)` );
+        return;
+    }
+    
+    const start_minutes = payload.readUInt16LE(1);
+    const duration_minutes = payload.readUInt16LE(3);
+    db.set_sleep_config(start_minutes, duration_minutes, function(err){
+        sleepingManager.set_sleep_time(start_minutes, duration_minutes);
+        console.log(`Set Sleep Time Config to: ${start_minutes}/${duration_minutes}`);
+    });
+}
+
+
+/**
+ * @param {WebSocketWithSession} ws 
+ */
+function responsdWithSleepRequestIfNessesary(ws){
+    if(!ws.session.device_id){
+        return;
+    }
+    const sleep_duration_ms = sleepingManager.get_remaining_duration_ms();
+    if(sleep_duration_ms > 0){
+        const buffer = Buffer.allocUnsafe(1+8);
+        buffer.writeUInt8(RequestTypes.StartSleeping, 0);
+        buffer.writeBigInt64LE(BigInt(sleep_duration_ms), 1);
+        ws.send(buffer, err => {
+            if(err){
+                console.error("Error sending Sleep Request: ", err);
+            }else{
+                console.log(`Sent Sleep Request to Device with ID ${ws.session.device_id} for ${sleep_duration_ms} ms.`);
+            }
+        });
+    }
+}
+
+
 const wss = new WebSocketServer({server});
 wss.on('connection', function(/**@type {WebSocketWithSession} */ws, req) {
     ws.session = new WebSocketSession();
-    console.log(`New WebSocket Connection:`, ws.url);
     const socket = req.socket;
-    console.log(`Socket info`, `${socket.localAddress}:${socket.localPort}`, `${socket.remoteAddress}:${socket.remotePort}`);
+    ws.session.local_address = `${socket.localAddress}/${socket.localPort}`;
+    ws.session.remote_address = `${socket.remoteAddress}/${socket.remotePort}`;
+    console.log(`New WebSocket Connection:`,
+                ws.url, ws.session.local_address, ws.session.remote_address);
     ws.on('close', function(number, reason){
         console.log(`WebSocket Connection Closed:`, number , reason);
         if(connected_devices[ws.session.device_id] === ws){
@@ -511,21 +609,34 @@ wss.on('connection', function(/**@type {WebSocketWithSession} */ws, req) {
         console.error(`WebSocket Error:`, err);
     })
     ws.on('message', function(data, isBinary){
+        responsdWithSleepRequestIfNessesary(ws);
+        
         if(data.toString() === '/'){ // HeartBeat
             return;
         }
-        if(data.toString().length == 0){
-            console.log(`Empty Buffer`);
-            return;
+        
+        if(DEBUG){
+            if(data.toString().length == 0){
+                console.log(`Empty Buffer`);
+                return;
+            }
+            console.log('Received Message: ', data, isBinary ? "" : data.toString());
+            if(!(data instanceof Buffer)){
+                console.log(`Message Data is not a Buffer`, data);
+            }
         }
-        console.log('Received Message: ', data, isBinary ? "" : data.toString());
-        if(!(data instanceof Buffer)){
-            console.log(`Message Data is not a Buffer`, data);
-        }
+        
         handleMessage(ws, /**@type {Buffer}*/ (data), isBinary);
+    });
+    ws.on('ping', function(data){
+        responsdWithSleepRequestIfNessesary(ws);
     });
 });
 
+
+sleepingManager.set_sleep_time( 21*60 + 41 + new Date().getTimezoneOffset(), 1 );
+
 server.listen(PORT, () => {
     console.log("App listening on port: ", PORT);
+    refresh_sleeping_config();
 });

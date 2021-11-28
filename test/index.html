@@ -50,7 +50,15 @@
     <button onclick="getConfig()">Get Config</button>
     <button onclick="setConfig()">Set Config</button>
     <button onclick="saveConfig()">Save Config</button>
-    <button onclick="reboonNetwork()">Reboot Network</button>
+    <button onclick="reboonNetwork()">Reboot Network</button> <br />
+    
+    <div>
+        Sleep Start Time: <input type="text" id="sst">
+        Sleep Duration Time: <input type="text" id="sdt">
+    </div>
+    
+    <button onclick="setSleepConfig()">Set Sleep Config</button>
+    
     
     <div id="last_measurements">
         
@@ -321,6 +329,21 @@ function handleGetConfig(view){
     const view2 = new DataView(view.buffer, 5);
     c.decode(view2);
     c.show();
+}
+
+function setSleepConfig(){
+    const d = new Date();
+    const sst = document.getElementById('sst').value.split(':').map((x,i) => i==0 ? (+x)*60 : +x).reduce((last, cur) => last+cur) + d.getTimezoneOffset();
+    const sdt = document.getElementById('sdt').value.split(':').map((x,i) => i==0 ? (+x)*60 : +x).reduce((last, cur) => last+cur);
+    
+    const buffer = new ArrayBuffer(5);
+    const view = new DataView(buffer);
+    
+    view.setUint8(0, 81);
+    view.setUint16(1, sst, true);
+    view.setUint16(3, sdt, true);
+    
+    socket.send(buffer);
 }
 
 </script>

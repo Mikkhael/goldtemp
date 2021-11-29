@@ -1,7 +1,4 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-variable"
 #include <OneWire.h>
-#pragma GCC diagnostic pop
 #include <DallasTemperature.h>
 #include <ESP8266WiFi.h>
 #include <WebSocketsClient.h>
@@ -28,7 +25,10 @@ static_assert(sizeof(Config) == 32+32+102 + 2 + 8);
 const int WS_Reconnect_Interval = 5000;
 
 // House Debun Config
-// cfg1TP-LINK_FD2F53,242936961,3192.168.0.101
+// cfg1TP-LINK_FD2F53,242936961,3192.168.0.101,48080
+
+// Heroku Config
+// cfg3goldtemp.herokuapp.com,480
 
 constexpr char AP_SSID[] = "ESP GOLDTEMP";
 constexpr char AP_PASS[] = "1234abcd";
@@ -456,7 +456,7 @@ Post New Tmeperatures Request Body Format:
   void prepare_payload(){ // TODO
     static const uint8_t request_id = 10;
     
-    auto t1 = millis();
+    //auto t1 = millis();
     payloaded_measurements = MAX_PAYLOAD_MEASUREMENTS_SIZE / (8 + 2*tracked_devices);
     if(payloaded_measurements > commited_measurements)
       payloaded_measurements = commited_measurements;
@@ -474,7 +474,7 @@ Post New Tmeperatures Request Body Format:
       push((char*)(measurements_values + (commited_measurements - i - 1) * MAX_DEVICES), tracked_devices*2);
     }
     
-    auto t2 = millis();
+    //auto t2 = millis();
 
     //logln("DEBUG: ", sizeof(ws_payload), " ", payloaded_measurements, " ", commited_measurements, " ", measurements_diff, " ", MAX_PAYLOAD_MEASUREMENTS_SIZE, " ", MAX_PAYLOAD_SIZE);
 

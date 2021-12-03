@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    
+    <style>
+        body *{
+            box-sizing: border-box;
+        }
+        body{
+            position: absolute;
+            top: 0px;
+            bottom: 0px;
+            left: 0px;
+            right: 0px;
+            margin: 0px;
+            background-size: 100%;
+            height: 100%;
+            width: 100%;
+            background-color: rgba(192,192,192,15);
+        }
+        .tab{
+            flex-direction: row;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .tabs{
+            min-width: 8ch;
+            outline: 2.5px black solid;
+            flex-grow: 1;
+            flex-basis: 0vw;
+            padding: 0.1vw;
+            text-align: center;
+            align-items: center;
+            font-size: 3em;
+            font-family: Papyrus;
+            color:black;
+            background-color: rgba(152,152,152,152);
+            transition: 1s;
+        }
+        .tabs:hover{
+            background-color: rgba(100,100,100,100);
+            cursor: pointer;
+        }
+        .temp{
+            margin: 0vw 0.5vw;
+            flex-direction: row;
+            display: flex;
+            justify-content: center;
+            gap: 0.1em;
+            flex-wrap: wrap;
+            margin-top: 10vh;
+        }
+        .temp>*{
+            word-wrap: break-word;
+            flex-grow: 1;
+            border: 2.5px black solid;
+            flex-basis: 19vw;
+            padding: 0.1em;
+            text-align: center;
+            align-items: center;
+            font-size: 1.5em;
+            font-family: Arial;
+            color:black;
+        }     
+        .bg{
+            position: absolute;
+            top: 0px;
+            bottom: 0px;
+            left: 0px;
+            right: 0px;
+            margin: 0px;
+            z-index: -100;
+        }
+    </style>
+
+</head>
+<body>
+    <div class="bg"></div>
+    <div class="tab">
+        <div class="tabs">
+            <span style="font-weight: bold">Settings</span>
+        </div>
+        <div class="tabs">
+            <span style="font-weight: bold">Graph</span>
+        </div>
+        <div class="tabs">
+            <span style="font-weight: bold">Errors</span>
+        </div>
+    </div>
+    <div class="temp">
+        <div>
+            <span style="font-weight: bold">Name of thermometer</span>
+            <br><br>
+            <span style="font-weight: bold">Termperature:</span>
+            <br><br>
+            <span style="font-weight: bold">Time:</span>
+        </div>
+        <div>
+            <span style="font-weight: bold">Name of thermometer</span>
+            <br><br>
+            <span style="font-weight: bold">Termperature:</span>
+            <br><br>
+            <span style="font-weight: bold">Time:</span>
+        </div>
+        <div>
+            <span style="font-weight: bold">Name of thermometer</span>
+            <br><br>
+            <span style="font-weight: bold">Termperature:</span>
+            <br><br>
+            <span style="font-weight: bold">Time:</span>
+        </div>
+        <div>
+            <span style="font-weight: bold">Name of thermometer</span>
+            <br><br>
+            <span style="font-weight: bold">Termperature:</span>
+            <br><br>
+            <span style="font-weight: bold">Time:</span>
+        </div>
+        <div>
+            <span style="font-weight: bold">Name of thermometer</span>
+            <br><br>
+            <span style="font-weight: bold">Termperature:</span>
+            <br><br>
+            <span style="font-weight: bold">Time:</span>
+        </div>
+        <div>
+            <span style="font-weight: bold">Name of thermometer</span>
+            <br><br>
+            <span style="font-weight: bold">Termperature:</span>
+            <br><br>
+            <span style="font-weight: bold">Time:</span>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        var x = 5;
+        document.getElementById("1").innerHTML = x;
+
+        var my_div = null;
+        var NewDiv = null;
+
+        function addElement(){
+            for(var i = 0; i < x; i++){
+            NewDiv = document.createElement("div");
+            newDiv.innerHTML;
+
+            my_div = document.getElementById("org_div1");
+            document.body.insertBefore(newDiv, my_div);
+            }
+        }
+    </script>
+
+</body>
+</html>

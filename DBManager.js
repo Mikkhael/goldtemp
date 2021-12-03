@@ -148,6 +148,17 @@ class DBManager{
         });
     }
     
+    get_thermometers_names(next = function(err, result){} ){
+        const query = `SELECT * FROM names`;
+        this.query_with_reconnect(query, function(err, result, fields){
+            if(err){
+                console.error("Error while performing get_thermometers_names query: ", err);
+                next(err);
+            }
+            next(err, result);
+        });
+    }
+    
 };
 
 module.exports = DBManager;

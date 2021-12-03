@@ -116,7 +116,15 @@ Set Sleeping Time:
     - uint8 request_type 81
     - uint16 start_minutes
     - uint16 duration_minutes
+
     
+(CLIENT -> SERVER)
+Get Thermometer Names:
+    - uint8 request_type 90
+(CLIENT <- SERVER)
+Response:
+    - JSON {thermometer_id: thermometer_name}
+
 */
 
 const DEVICE_CONFIG_LEN = 32+32+102+2+8;
@@ -274,6 +282,7 @@ const RequestTypes = {
     SaveConfig: 72,
     StartSleeping: 80,
     SetSleepingTime: 81,
+    GetThermometerNamesRequest: 90
 };
 Object.freeze(RequestTypes);
 
@@ -346,6 +355,10 @@ function handleMessage(ws, data, isBinary){
         // }
         case RequestTypes.SetSleepingTime: {
             handleSetSleepingTime(ws, data);
+            break;
+        }
+        case RequestTypes.GetThermometerNamesRequest: {
+            handleGetThermometerNameRequest(ws, data);
             break;
         }
         default: {
@@ -596,6 +609,27 @@ function responsdWithSleepRequestIfNessesary(ws){
             }
         });
     }
+}
+
+
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} payload
+ */
+function handleGetThermometerNameRequest(ws, payload){
+    db.get_thermometers_names((err, result) => {
+        if(!err){
+            const data = {};
+            for(const record of result){
+                data[record.device_id.toString()] = record.device_name;
+            }
+            ws.send(JSON.stringify({type:"names", data}), err => {
+                if(err){
+                    console.error(`Error sending the Get Thermometer Names Response: `, err);
+                }
+            })
+        }
+    })
 }
 
 

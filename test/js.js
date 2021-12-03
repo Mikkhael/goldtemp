@@ -44,7 +44,7 @@ onGetLastTemperatures = function(count, timestamps, thermometer_ids, measurement
     document.getElementById(`last_measurements`).innerHTML = "";
     for(let i=0; i<count; i++){
         document.getElementById(`last_measurements`).innerHTML += 
-            `${new Date(Number(timestamps[i]))} | ${thermometer_ids[i]} : ${measurements[i]}°C <br />`;
+            `${new Date(Number(timestamps[i]))} | ${thermometer_ids[i]} : ${measurements[i]}°C (${getDeviceNameById(thermometer_ids[i].toString())})<br />`;
     }
 }
 
@@ -54,6 +54,13 @@ onGetLogs = function(is_important, device_id, data){
 
 onGetConfig = function(device_id, cfg){
     show_config(cfg);
+}
+
+onGetThermometerNames = function(){
+    const elem = document.getElementById(`last_measurements`);
+    for(const id in RecognizedDeviceNames){
+        elem.innerHTML = elem.innerHTML.replace(`${id}?`, RecognizedDeviceNames[id]);
+    }
 }
 
 function getLastTemperatures(){
@@ -93,6 +100,10 @@ function setSleepConfig(){
         start_h * 60 + start_m,
         duration_h * 60 + duration_m
     );
+}
+
+function getThermometerNames(){
+    socket.sendGetThermometerNames();
 }
 
 /*

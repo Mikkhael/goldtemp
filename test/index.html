@@ -27,11 +27,6 @@
 </head>
 <body>
     
-    <button onclick="getLastTemperatures()">Get Last Measurements</button>
-    <button onclick="setNewSampleInterval()">Set New Sample Interval</button>
-    <button onclick="getLastLogs(false)">Get Last Logs</button>
-    <button onclick="getLastLogs(true)">Get Last Important Logs</button>
-    
     <br />
     
     <div id="config">
@@ -46,6 +41,12 @@
     <button onclick="setConfig()">Set Config</button>
     <button onclick="saveConfig()">Save Config</button>
     <button onclick="reboonNetwork()">Reboot Network</button> <br />
+    
+    <button onclick="getLastTemperatures()">Get Last Measurements</button>
+    <button onclick="setNewSampleInterval()">Set New Sample Interval</button>
+    <button onclick="getLastLogs(false)">Get Last Logs</button>
+    <button onclick="getLastLogs(true)">Get Last Important Logs</button>
+    <button onclick="getThermometerNames()">Get Thermometer Names</button> <br />
     
     <div>
         Sleep Start Time: <input type="text" class="time" id="start_hours">:<input type="text" class="time" id="start_minutes">

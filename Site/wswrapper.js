@@ -120,6 +120,23 @@ class Config{
         this.ws_host   = normalize_string(this.ws_host);
     }
 }
+/**@type {Object.<string, string>} */
+const RecognizedDeviceNames = {};
+
+/**
+ * @param {string} id 
+ * @param {string} name 
+ */
+function registerDeviceName(id, name){
+    RecognizedDeviceNames[id] = name;
+}
+
+/**
+ * @param {string} id 
+ */
+function getDeviceNameById(id){
+    return RecognizedDeviceNames[id] || (id + '?');
+}
 
 function getDefaultSocketAddress(){
     const is_https = location.protocol === 'https:';
@@ -129,8 +146,8 @@ function getDefaultSocketAddress(){
 
 /**
  * @param {number} count 
- * @param {number[]} timestamps 
- * @param {number[]} thermometer_ids 
+ * @param {BigInt[]} timestamps 
+ * @param {BigInt[]} thermometer_ids 
  * @param {number[]} measurements
  * @this {Socket}
  */
@@ -151,6 +168,7 @@ let onGetLogs = function(is_important, device_id, data){ console.log(arguments);
  */
 let onGetConfig = function(device_id, cfg){ console.log(arguments); }
 
+let onGetThermometerNames = function(){ console.log(RecognizedDeviceNames); };
 
 class Socket{
     constructor(address = getDefaultSocketAddress(), heartbeat_delay = 20000){
@@ -197,7 +215,21 @@ class Socket{
                     }
                 });
             }else{
-                console.log(new Date(), msg);
+                const json = JSON.parse(msg);
+                if(!json || !json.type){
+                    console.error('Unrecognized TEXT ws message: ', msg);
+                }else{
+                    switch(json.type){
+                        case "names":{
+                            this.handleGetThermometerNames(json.data);
+                            break;
+                        }
+                        default:{
+                            console.error(`Unrecognized JSON ws message: `, json.type);
+                            break;
+                        }
+                    }
+                }
             }
         });
         
@@ -284,6 +316,13 @@ class Socket{
         this.socket.send(buffer);
     }
     
+    sendGetThermometerNames(){
+        const buffer = encode_buffer(1, [
+            ['u8', 90]
+        ]);
+        this.socket.send(buffer);
+    }
+    
     /**
      * @param {ArrayBuffer} buffer 
      */
@@ -352,6 +391,16 @@ class Socket{
                 throw err;
             }
         }
+    }
+    
+    /**
+     * @param {Object.<string, string>} data 
+     */
+    handleGetThermometerNames(data){
+        for(const key in data){
+            registerDeviceName(key, data[key]);
+        }
+        onGetThermometerNames();
     }
 };
 

@@ -24,7 +24,7 @@ static_assert(sizeof(Config) == 32+32+102 + 2 + 8);
 
 const int WS_Reconnect_Interval = 5000;
 
-// House Debun Config
+// House Debug Config
 // cfg1TP-LINK_FD2F53,242936961,3192.168.0.101,48080
 
 // Heroku Config

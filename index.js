@@ -23,23 +23,19 @@ db.connect();
 // WEB INTERFACE
 
 app.use('/test',express.static('test'));
-
-app.get('/', (req, res) => {
-    const ip = req.ip;
-    const hostname = req.hostname;
-    res.send(`Hello ${hostname}@${ip}`);
-    res.end();
-});
-
+app.use('/',express.static('Site'));
+app.use('/Site',express.static('Site'));
 
 // WEBSOCKETS
 
 /*
 
+(ESP -> SERVER)
 Register As ESP Device:
     - uint8 requrest_type (1)
     - uint32 device_id 
 
+(ESP -> SERVER)
 Post New Tmeperatures Request Body Format:
     - uint8  request_type (10)
     - uint32 device_id
@@ -48,31 +44,37 @@ Post New Tmeperatures Request Body Format:
     - uint64 thermometer_ids[thermometers_count]
     - uint64 measurements_timestamps[measurements_count]
     - int16 measurements[measurements_count][thermometers_count]
-    
-Get Latest Temperatures Request Body Format:
+
+(CLIENT -> SERVER)
+Get Latest Temperatures Request:
     - uint8 request_type (20)
+(CLIENT <- SERVER)
 Response:
     - uint8  request_type (20)
     - uint32 count
     - uint64 timestamps[count]
     - uint64 thermometer_ids[count]
     - int16  measurements[count]
-    
+
+(CLIENT -> ESP)    
 Set Sample Frequency:
     - uint8  request_type (30)
     - uint64 sample_interval_ms
-    
+
+(ESP -> SERVER)
 Get Current Timestamp:
     - uint8  request_type (40)
+(ESP <- SERVER)
 Response:
     - uint8  request_type (40)
     - uint64 current_timestamp
     
-    
+(CLIENT -> SERVER -> ESP)
 Get Logs:
     - uint8 request_type (50)
     [ - uint32 seq (Server <-> ESP) ]
     - uint8 get_only_important (0|1)
+(CLIENT <- SERVER <- ESP)
 Response:
     - uint8 response_type (51)
     [ - uint32 seq (Server <-> ESP) ]
@@ -80,30 +82,36 @@ Response:
     - uint32 device_id
     - char[] data
     
+(CLIENT -> SERVER -> ESP)
 Get Config
     - uint8 request_type 60
     [ - uint32 seq (Server <-> ESP) ]
+(CLIENT <- SERVER <- ESP)
 Response:
     - uint8 response_type 61
     [ - uint32 seq (Server <-> ESP) ]
     - uint32 device_id
     - char[32+32+102+2+8] data
     
+(CLIENT -> SERVER -> ESP)
 Set Config:
     - uint8 request_type 70
     - char[32+32+102+2+8] data
 
+(CLIENT -> SERVER -> ESP)
 Reboot Network:
     - uint8 request_type 71
     
+(CLIENT -> SERVER -> ESP)
 Save Config:
     - uint8 request_type 72
     
-    
+(SERVER -> ESP)
 Start Sleeping:
     - uint8 request_type 80
     - uint64 duration_ms
     
+(CLIENT -> SERVER)
 Set Sleeping Time:
     - uint8 request_type 81
     - uint16 start_minutes
@@ -563,7 +571,7 @@ function handleSetSleepingTime(ws, payload){
     const duration_minutes = payload.readUInt16LE(3);
     db.set_sleep_config(start_minutes, duration_minutes, function(err){
         sleepingManager.set_sleep_time(start_minutes, duration_minutes);
-        console.log(`Set Sleep Time Config to: ${start_minutes}/${duration_minutes}`);
+        console.log(`Set Sleep Time Config to: ${Math.round(start_minutes/60)}:${start_minutes%60} UTC/${Math.round(duration_minutes/60)}:${duration_minutes%60}`);
     });
 }
 
@@ -612,6 +620,9 @@ wss.on('connection', function(/**@type {WebSocketWithSession} */ws, req) {
         responsdWithSleepRequestIfNessesary(ws);
         
         if(data.toString() === '/'){ // HeartBeat
+            if(DEBUG){
+                process.stdout.write('♥');
+            }
             return;
         }
         
@@ -638,5 +649,6 @@ sleepingManager.set_sleep_time( 21*60 + 41 + new Date().getTimezoneOffset(), 1 )
 
 server.listen(PORT, () => {
     console.log("App listening on port: ", PORT);
+    console.log("DEBUG_MODE: ", DEBUG);
     refresh_sleeping_config();
 });

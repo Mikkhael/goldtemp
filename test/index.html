@@ -15,24 +15,19 @@
         #last_measurements{
             color: red;
         }
+        
+        input.time{
+            display: inline-block;
+            width: 2ch;
+        }
     </style>
+    
+    <script src="../Site/wswrapper.js"></script>
     
 </head>
 <body>
-
-    <button onclick="beginTest()">Begin Test</button>
-    <button onclick="wake()">Wake</button>
-    <button onclick="hardWake()">Fetch Wake</button>
     
-    <br />
-    
-    Device ID: <input type="text" id="device_id" />
-    Thermometers IDs: <input type="text" id="thermometers_ids" />
-    Measures: <input type="text" id="measures" />
-    New Interval: <input type="text" id="new_interval" />
-     <br />
-    <button onclick="postNewTemperatures()">Post New Temperatures</button>
-    <button onclick="getLastMeasurements()">Get Last Measurements</button>
+    <button onclick="getLastTemperatures()">Get Last Measurements</button>
     <button onclick="setNewSampleInterval()">Set New Sample Interval</button>
     <button onclick="getLastLogs(false)">Get Last Logs</button>
     <button onclick="getLastLogs(true)">Get Last Important Logs</button>
@@ -53,300 +48,22 @@
     <button onclick="reboonNetwork()">Reboot Network</button> <br />
     
     <div>
-        Sleep Start Time: <input type="text" id="sst">
-        Sleep Duration Time: <input type="text" id="sdt">
+        Sleep Start Time: <input type="text" class="time" id="start_hours">:<input type="text" class="time" id="start_minutes">
+        <br />
+        Sleep Duration Time: <input type="text" class="time" id="duration_hours">:<input type="text" class="time" id="duration_minutes">
     </div>
     
     <button onclick="setSleepConfig()">Set Sleep Config</button>
     
     
-    <div id="last_measurements">
-        
-    </div>
+    <div id="last_measurements"></div>
     
-    <div id="messages">
-        
-    </div>
+    <div id="messages"></div>
     
     <pre id="logs"></pre>
     
-<script>
-//@ts-check
-
-class Config{
-    constructor(cred_ssid, cred_pass, ws_host, ws_port, sample_interval){
-        this.cred_ssid = cred_ssid;
-        this.cred_pass = cred_pass;
-        this.ws_host = ws_host;
-        this.ws_port = ws_port;
-        this.sample_interval = sample_interval;
-    }
     
-    encode(view){
-        for(let i=0; i<31 && i < this.cred_ssid.length; i++){
-            view.setUint8(i, this.cred_ssid.charCodeAt(i));
-        }
-        view.setUint8(31, 0);
-        for(let i=0; i<31 && i < this.cred_pass.length; i++){
-            view.setUint8(32 + i, this.cred_pass.charCodeAt(i));
-        }
-        view.setUint8(32+31, 0);
-        for(let i=0; i<101 && i < this.ws_host.length; i++){
-            view.setUint8(32+32 + i, this.ws_host.charCodeAt(i));
-        }
-        view.setUint8(32+32+101, 0);
-        view.setUint16(32+32+102, this.ws_port, true);
-        view.setBigUint64(32+32+102+2, BigInt(this.sample_interval), true);
-    }
-    
-    decode(view){
-        this.cred_ssid = [];
-        for(let i=0; i<32; i++){
-            let c = view.getUint8(i);
-            if(c == 0) break;
-            this.cred_ssid[i] = c;
-        }
-        this.cred_ssid = this.cred_ssid.map(x => String.fromCharCode(x)).join('');
-        this.cred_pass = [];
-        for(let i=0; i<32; i++){
-            let c = view.getUint8(32 + i);
-            if(c == 0) break;
-            this.cred_pass[i] = c;
-        }
-        this.cred_pass = this.cred_pass.map(x => String.fromCharCode(x)).join('');
-        this.ws_host = [];
-        for(let i=0; i<102; i++){
-            let c = view.getUint8(32+32 + i);
-            if(c == 0) break;
-            this.ws_host[i] = c;
-        }
-        this.ws_host = this.ws_host.map(x => String.fromCharCode(x)).join('');
-        this.ws_port = view.getUint16(32+32+102, true);
-        this.sample_interval = view.getBigUint64(32+32+102+2, true);
-    }
-    
-    show(){
-        document.querySelector("#config>input[v='1']").value = this.cred_ssid;
-        document.querySelector("#config>input[v='2']").value = this.cred_pass;
-        document.querySelector("#config>input[v='3']").value = this.ws_host;
-        document.querySelector("#config>input[v='4']").value = this.ws_port;
-        document.querySelector("#config>input[v='5']").value = this.sample_interval;
-    }
-    
-    load(){
-        this.cred_ssid = document.querySelector("#config>input[v='1']").value;
-        this.cred_pass = document.querySelector("#config>input[v='2']").value;
-        this.ws_host = document.querySelector("#config>input[v='3']").value;
-        this.ws_port = +document.querySelector("#config>input[v='4']").value;
-        this.sample_interval = +document.querySelector("#config>input[v='5']").value;
-    }
-};
-
-const messages = document.getElementById('messages');
-
-const is_https = location.protocol === 'https:';
-let heartbeat_message = '/';
-let heartbeat_delay = 20 * 1000;
-function createSocket(address){
-    let socket = new WebSocket(address);
-    
-    function sendHeartbeat(){
-        if(socket.readyState !== socket.OPEN){
-            console.log("Cannot send heartbeat, socket not OPEN");
-            return;
-        }
-        socket.send(heartbeat_message);
-        setTimeout(sendHeartbeat, heartbeat_delay);
-    }
-    
-    // Connection opened
-    socket.addEventListener('open', function (event) {
-        console.log('Connected To server');
-        sendHeartbeat();
-    });
-
-    // Listen for messages
-    socket.addEventListener('message', function (event) {
-        const msg = event.data;
-        const date = new Date();
-        if(msg instanceof Blob){
-            msg.arrayBuffer().then(buffer => {
-                console.log(new Uint8Array(buffer));
-                let view = new DataView(buffer);
-                if(view.getUint8(0) == 20){
-                    handleLastMeasurements(view);
-                }else if(view.getUint8(0) == 51){
-                    handleLastLogs(view);
-                }else if(view.getUint8(0) == 61){
-                    handleGetConfig(view);
-                }
-            })
-        }else{
-            messages.innerHTML += `${date}: ${msg} <br />`;
-        }
-    });
-    
-    return socket;
-}
-const websocketOriginEndpoint = `${is_https ? 'wss' : 'ws'}://${location.host}`;
-let socket = createSocket(websocketOriginEndpoint);
-
-function beginTest(){
-    socket.send('test');
-    console.log("Send test request");
-}
-
-function wake(){
-    socket.send('wake');
-    console.log("Send wake request");
-}
-function hardWake(){
-    console.log('Sending Hard Wake Fetch request');
-    fetch(`${location.origin}/test/t.txt`)
-    .then(response => response.text())
-    .then(text => console.log("Fetch Result: ", text))
-    .catch(err => console.log("Cought error: ", err));
-}
-
-function handleLastMeasurements(view){
-    const count = view.getUint32(1, true);
-    const result = [];
-    for(let i=0; i<count; i++){
-        const record = {};
-        record.time = new Date( Number(view.getBigUint64(5 + i*8, true)) );
-        record.id   = view.getBigUint64(5 + count*8 + i*8, true);
-        record.value  = Math.round(view.getUint16(5 + count*16 + i*2, true) / 128 * 100) / 100;
-        result.push(record);
-    }
-    
-    document.getElementById(`last_measurements`).innerHTML = result.map(
-        x => `${x.time} | ${x.id} : ${x.value}°C`
-    ).join('<br />');
-}
-
-function parsePostNewTemperaturesRequest(){
-    const device_id = parseInt(document.getElementById('device_id').value);
-    const thermometers_ids = document.getElementById('thermometers_ids').value.split(',').map(x => parseInt(x));
-    const measures = document.getElementById('measures').value.split(/[;,]/g).map(x => parseInt(x));
-    const thermometers_count = thermometers_ids.length;
-    const measures_count = measures.length / thermometers_count;
-    
-    const obj = {
-        device_id,
-        thermometers_count,
-        measures_count,
-        thermometers_ids,
-        measures
-    };
-    
-    console.log(`Sending Post New Temperatures Request:`, obj);
-    
-    const buffer = new ArrayBuffer(1+12+thermometers_count*8+measures_count*thermometers_count*2);
-    const view = new DataView(buffer);
-    
-    view.setUint8(0, 10);
-    view.setUint32(1, device_id, true);
-    view.setUint32(1+4, thermometers_count, true);
-    view.setUint32(1+8, measures_count, true);
-    
-    for(let i=0; i<thermometers_count; i++){
-        view.setBigUint64(1+12+i*8, BigInt(thermometers_ids[i]), true);
-    }
-    for(let i=0; i<measures_count*thermometers_count; i++){
-        view.setInt16(1+12+thermometers_count*8+i*2, measures[i], true);
-    }
-    
-    console.log("Buffer: ", buffer);
-    
-    return {obj, buffer};
-}
-
-function postNewTemperatures(){
-    const {obj, buffer} = parsePostNewTemperaturesRequest();
-    
-    socket.send(buffer);
-}
-
-function getLastMeasurements(){
-    socket.send(new Uint8Array([20]));
-}
-
-function setNewSampleInterval(){
-    const value = BigInt(+document.getElementById("new_interval").value || 0);
-    console.log("Setting new interval to: ", value);
-    const buffer = new ArrayBuffer(9);
-    const view = new DataView(buffer);
-    view.setUint8(0, 30);
-    view.setBigUint64(1, value, true);
-    socket.send(buffer);
-}
-
-function getLastLogs(important){
-    const buffer = Uint8Array.from([50, important ? 1 : 0]);
-    socket.send(buffer);
-}
-
-function handleLastLogs(view){
-    const important = view.getUint8(1);
-    const device_id = view.getUint32(2, true);
-    let arr = Array.from(new Uint8Array(view.buffer));
-    console.log(arr);
-    arr.splice(0, 1+1+4);
-    console.log(arr);
-    let null_index = arr.indexOf(0);
-    console.log(null_index);
-    if(null_index >= 0){
-        let arr2 = arr.splice(0, null_index+1);
-        console.log(arr2);
-        arr = [...arr, ...arr2];
-    }
-    document.getElementById('logs').innerHTML = arr.map(x => String.fromCharCode(x)).join('');
-}
-
-function getConfig(){
-    socket.send( Uint8Array.from([60]) );
-}
-function setConfig(){
-    const c = new Config();
-    c.load();
-    const buffer = new ArrayBuffer(1+32+32+102+2+8);
-    const view = new DataView(buffer,0,1);
-    view.setUint8(0, 70);
-    const view2 = new DataView(buffer, 1);
-    c.encode(view2);
-    socket.send(buffer);
-}
-
-function reboonNetwork(){
-    socket.send(Uint8Array.from([71]));
-}
-function saveConfig(){
-    socket.send(Uint8Array.from([72]));
-}
-
-function handleGetConfig(view){
-    const c = new Config();
-    const view2 = new DataView(view.buffer, 5);
-    c.decode(view2);
-    c.show();
-}
-
-function setSleepConfig(){
-    const d = new Date();
-    const sst = document.getElementById('sst').value.split(':').map((x,i) => i==0 ? (+x)*60 : +x).reduce((last, cur) => last+cur) + d.getTimezoneOffset();
-    const sdt = document.getElementById('sdt').value.split(':').map((x,i) => i==0 ? (+x)*60 : +x).reduce((last, cur) => last+cur);
-    
-    const buffer = new ArrayBuffer(5);
-    const view = new DataView(buffer);
-    
-    view.setUint8(0, 81);
-    view.setUint16(1, sst, true);
-    view.setUint16(3, sdt, true);
-    
-    socket.send(buffer);
-}
-
-</script>
+    <script src="js.js"></script>
     
 </body>
 </html>

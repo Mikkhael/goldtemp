@@ -5,154 +5,102 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
-    
-    <style>
-        body *{
-            box-sizing: border-box;
-        }
-        body{
-            position: absolute;
-            top: 0px;
-            bottom: 0px;
-            left: 0px;
-            right: 0px;
-            margin: 0px;
-            background-size: 100%;
-            height: 100%;
-            width: 100%;
-            background-color: rgba(192,192,192,15);
-        }
-        .tab{
-            flex-direction: row;
-            display: flex;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-        .tabs{
-            min-width: 8ch;
-            outline: 2.5px black solid;
-            flex-grow: 1;
-            flex-basis: 0vw;
-            padding: 0.1vw;
-            text-align: center;
-            align-items: center;
-            font-size: 3em;
-            font-family: Papyrus;
-            color:black;
-            background-color: rgba(152,152,152,152);
-            transition: 1s;
-        }
-        .tabs:hover{
-            background-color: rgba(100,100,100,100);
-            cursor: pointer;
-        }
-        .temp{
-            margin: 0vw 0.5vw;
-            flex-direction: row;
-            display: flex;
-            justify-content: center;
-            gap: 0.1em;
-            flex-wrap: wrap;
-            margin-top: 10vh;
-        }
-        .temp>*{
-            word-wrap: break-word;
-            flex-grow: 1;
-            border: 2.5px black solid;
-            flex-basis: 19vw;
-            padding: 0.1em;
-            text-align: center;
-            align-items: center;
-            font-size: 1.5em;
-            font-family: Arial;
-            color:black;
-        }     
-        .bg{
-            position: absolute;
-            top: 0px;
-            bottom: 0px;
-            left: 0px;
-            right: 0px;
-            margin: 0px;
-            z-index: -100;
-        }
-    </style>
-
+    <link rel="stylesheet" href="style.css"/>
+    <script src="js.js"></script>
+     
 </head>
 <body>
     <div class="bg"></div>
     <div class="tab">
-        <div class="tabs">
+        <div class="tabs" onclick="moveToHome()">
+            <span style="font-weight: bold">Home</span>
+        </div>
+        <div class="tabs" onclick="moveToSettings()">
             <span style="font-weight: bold">Settings</span>
         </div>
-        <div class="tabs">
+        <div class="tabs" onclick="moveToGraph()">
             <span style="font-weight: bold">Graph</span>
         </div>
-        <div class="tabs">
+        <div class="tabs" onclick="moveToErrors()">
             <span style="font-weight: bold">Errors</span>
         </div>
     </div>
-    <div class="temp">
-        <div>
-            <span style="font-weight: bold">Name of thermometer</span>
-            <br><br>
-            <span style="font-weight: bold">Termperature:</span>
-            <br><br>
-            <span style="font-weight: bold">Time:</span>
-        </div>
-        <div>
-            <span style="font-weight: bold">Name of thermometer</span>
-            <br><br>
-            <span style="font-weight: bold">Termperature:</span>
-            <br><br>
-            <span style="font-weight: bold">Time:</span>
-        </div>
-        <div>
-            <span style="font-weight: bold">Name of thermometer</span>
-            <br><br>
-            <span style="font-weight: bold">Termperature:</span>
-            <br><br>
-            <span style="font-weight: bold">Time:</span>
-        </div>
-        <div>
-            <span style="font-weight: bold">Name of thermometer</span>
-            <br><br>
-            <span style="font-weight: bold">Termperature:</span>
-            <br><br>
-            <span style="font-weight: bold">Time:</span>
-        </div>
-        <div>
-            <span style="font-weight: bold">Name of thermometer</span>
-            <br><br>
-            <span style="font-weight: bold">Termperature:</span>
-            <br><br>
-            <span style="font-weight: bold">Time:</span>
-        </div>
-        <div>
-            <span style="font-weight: bold">Name of thermometer</span>
-            <br><br>
-            <span style="font-weight: bold">Termperature:</span>
-            <br><br>
-            <span style="font-weight: bold">Time:</span>
-        </div>
+    <div class="move" id="index.html">
+    <div class="temp" id="temp">
+    </div>
     </div>
 
     <script type="text/javascript">
-        var x = 5;
-        document.getElementById("1").innerHTML = x;
+    function Sth(site, to_what){fetch(site)
+        .then(function(response) {
+            return response.text()
+        })
+        .then(function(html) {
+            var parser = new DOMParser();
+            var content = parser.parseFromString(html, "text/html");
+            var div = content.querySelector(".move");
+            div.style.display = "none";
+            div.setAttribute("id", site);
+            document.body.appendChild(div);
+    })
+    .catch(function(err) {  
+        console.log('Failed to fetch page: ', err);  
+    })};
+        var ToSettings, ToGraph, ToErrors, ToHome;
 
-        var my_div = null;
-        var NewDiv = null;
+        Sth('settings.html', 'ToSettings');
+        Sth('graph.html', 'ToGraph');
+        Sth('errors.html', 'ToErrors'); 
+
+        window.onload = function(){ToHome = document};
+
+        function disableAll(){
+            document.getElementById("settings.html").style.display = "none";
+            document.getElementById("graph.html").style.display = "none";
+            document.getElementById("errors.html").style.display = "none";
+            document.getElementById("index.html").style.display = "none";
+        }
+
+        function moveToSettings(){
+            disableAll();
+            document.getElementById("settings.html").style.display = "block";
+        }
+
+        function moveToGraph(){
+            disableAll();
+            document.getElementById("graph.html").style.display = "block";
+        }
+
+        function moveToErrors(){
+            disableAll();
+            document.getElementById("errors.html").style.display = "block";
+        }
+
+        function moveToHome(){
+            disableAll();
+            document.getElementById("index.html").style.display = "block";
+        }
 
         function addElement(){
-            for(var i = 0; i < x; i++){
-            NewDiv = document.createElement("div");
-            newDiv.innerHTML;
-
-            my_div = document.getElementById("org_div1");
-            document.body.insertBefore(newDiv, my_div);
-            }
+            var newDiv = document.createElement("div");
+            newDiv.innerHTML = `<span class="TherName" style="font-weight: bold">"getThermometerNames()"</span>
+            <br><br>
+            <span class="Temp" style="font-weight: bold">"getLastTemperatures()"</span>
+            <br><br>
+            <span class="Times" style="font-weight: bold">Time:</span>`;
+            return newDiv;
         }
+
+        var a = document.getElementById("temp");
+
+        var thermometers = {};
+
+        var i;
+        
+        for(i = 0; i < 6; i++){
+            a.appendChild(addElement());
+        }
+
     </script>
 
 </body>

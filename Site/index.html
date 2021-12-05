@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
     <link rel="stylesheet" href="style.css"/>
-    <script src="js.js"></script>
+    <script src="wswrapper.js"></script>
      
 </head>
 <body>
@@ -95,11 +95,67 @@
 
         var thermometers = {};
 
-        var i;
+        let socket = new Socket();
+
         
-        for(i = 0; i < 6; i++){
-            a.appendChild(addElement());
+        function reloadTemps(){
+            document.getElementById('temp').innerHTML = "";
+            
+            for(let id in thermometers){
+                let div = addElement();
+                div.querySelector(".TherName").innerHTML = getDeviceNameById(thermometers[id].id);
+                div.querySelector(".Temp").innerHTML = `${thermometers[id].value} ℃`;
+                
+                let fmt = new Intl.DateTimeFormat([], {dateStyle: "short", timeStyle: 'long'});
+                let date = new Date(Number(thermometers[id].time));
+                
+                div.querySelector(".Times").innerHTML = `Time: ${fmt.format(date)}`;
+                document.getElementById('temp').appendChild(div);
+            }
         }
+        
+        onGetLastTemperatures = function(count, timestamps, thermometer_ids, measurements){
+            
+            for(let i=0; i<count; i++){
+                thermometers[ thermometer_ids[i] ] = {
+                    time: timestamps[i],
+                    value: measurements[i],
+                    id: thermometer_ids[i]
+                };
+            }
+            reloadTemps();
+        }
+        
+        // To automatycznie zaktualizuje tablice z nazwami, która wykożystywana jest przez 'getDeviceNameById', który wywoływany jest w 'reloadTemps'
+        onGetThermometerNames = function(){ 
+            reloadTemps();
+        }
+        
+        
+        // To poniżęj jest tylko i wyłącznie dla testów
+        setTimeout(() => {
+            socket.sendGetThermometerNames();
+        }, 2000);
+        setTimeout(() => {
+            socket.sendGetLatestTemperatures();
+        }, 3000);
+        
+        // Tą funkcję wywołać można ręcznie w konsolce
+        function generate_test_thermometers_output(){
+            RecognizedDeviceNames["111111111111"] = "Piętro 1";
+            RecognizedDeviceNames["222222222222"] = "Piętro 2 Kuchnia";
+            RecognizedDeviceNames["333333333333"] = "Piętro 2 Łazienka";
+            
+            // Zasymulowanie otrzymania odpowiedzi od serwera z randomowymi danymi
+            // Można se dodać jakieś inne dane jak chcesz
+            let now = new Date().getTime();
+            onGetLastTemperatures(4,
+                [now, now-1000, now-2000, now-3000],
+                [111111111111, 222222222222, 333333333333, 12092432184172583680],
+                [12, -32.5, 100, 54.32]
+            );
+        }
+
 
     </script>
 

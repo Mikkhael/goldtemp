@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Test</title>
+    
+    <style>
+        
+        body *{
+            box-sizing: border-box;
+        }
+        
+        body{
+            background-color: rgb(122, 124, 128);
+            width: 100%;
+            margin: 0px;
+            padding: 0px;
+        }
+        
+        .template{
+            display: none;
+        }
+        
+        #content{
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap:3px;
+        }
+        
+        .cell{
+            background-color: rgb(106, 108, 110);
+            padding: 5px;
+            border: 10px solid black;
+            font-size: 2em;
+            flex-basis: 1px;
+            flex-grow: 1;
+        }
+        
+        @media only screen and (max-width: 1200px) {
+            .cell{
+                font-size: 2em;
+                width: 100%;
+            }
+            #content{
+                flex-direction: column;
+            }
+        }
+        
+        @media only screen and (max-width: 700px) {
+            .cell{
+                font-size: 1em;
+                width: 100%;
+            }
+            #content{
+                flex-direction: column;
+            }
+        }
+        
+        .cell > .name{
+            font-size: 2em;
+            border-bottom: 2px solid black;
+        }
+        .cell > .value{
+            text-align: center;
+            font-size: 4em;
+            color: rgb(202, 38, 38);
+            border-bottom: 2px solid rgb(150, 29, 29);
+        }
+        .cell > .time{
+            font-size: 0.8em;
+        }
+        
+        .refresh_btn{
+            width: 100%;
+        }
+        
+    </style>
+    
+    <script src="../Site/wswrapper.js"></script>
+    
+</head>
+<body>
+    
+    <div id="content">
+        
+    </div>
+    
+    
+    <div id="cell_template" class="template">
+        <div class="cell" device_id="">
+            <div class="name">
+            </div>
+            <div class="value">
+            </div>
+            <div class="time">
+            </div>
+        </div>
+    </div>
+    
+    <button class="refresh_btn" onclick="refresh()">Odświerz</button>
+    
+    <script>
+        
+        const cell_template = document.getElementById('cell_template').firstElementChild;
+        const content = document.getElementById('content');
+        
+        function formatDate(date){
+            return Intl.DateTimeFormat([], {timeStyle: "long", dateStyle:"short"}).format(date);
+        }
+        
+        function setCell(elem, data = {}){
+            if(data.name){
+                elem.querySelector('.name').innerHTML = data.name;
+            }
+            if(data.value){
+                elem.querySelector('.value').innerHTML = `${data.value}&nbsp;°C`;
+            }
+            if(data.time){
+                elem.querySelector('.time').innerHTML = formatDate(data.time);
+            }
+            if(data.id){
+                elem.setAttribute('device_id', data.id);
+            }
+            if(data.color){
+                elem.querySelector('.value').style.color = data.color;
+                elem.querySelector('.name').style.color = data.color;
+                elem.style.borderColor = data.color;
+            }
+        }
+        
+        function getCellById(device_id){
+            const cell = document.querySelector(`.cell[device_id='${device_id}'`);
+            if(cell){
+                return cell;
+            }
+            return spawnCell({
+                name: getDeviceNameById(device_id),
+                id: device_id,
+            });
+        }
+        
+        function spawnCell(data){
+            const clone = cell_template.cloneNode(true);
+            content.appendChild(clone);
+            setCell(clone, {
+                name: '',
+                value: 0,
+                time: new Date(),
+                color: `hsl(${Math.random()*360}deg, 100%, 30%)`
+            });
+            setCell(clone, data);
+            return clone;
+        }
+        
+        const socket = new Socket();
+        socket.socket.addEventListener('open', (event) => {
+            refresh();
+        })
+        
+        onGetLastTemperatures = function(count, timestamps, thermometer_ids, measurements){
+            for(let i=0; i<count; i++){                
+                const id = thermometer_ids[i];
+                const time = new Date(Number(timestamps[i]));
+                const value = Math.round(measurements[i]*100)/100;
+                
+                const cell = getCellById(id);
+                setCell(cell, {
+                    value: value,
+                    time: time
+                });
+            }
+        }
+        
+        let update_interval = null;
+        onGetThermometerNames = function(){
+            console.log('Updated Names');
+            
+            if(!update_interval){
+                console.log('Starting auto refresh');
+                update_interval = setInterval(()=>{ refresh(); }, 5 * 60 * 1000);
+            }
+            
+            socket.sendGetLatestTemperatures()
+        }
+        
+        function refresh(){
+            console.log("Refreshing");
+            socket.sendGetThermometerNames();
+        }
+        
+    </script>
+</body>
+</html>

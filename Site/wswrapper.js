@@ -102,7 +102,7 @@ function normalize_string(str){
  * @param {number} value 
  */
 function raw_to_c(value){
-    return value >> 7;
+    return value / 128;
 }
 
 class Config{
@@ -238,7 +238,7 @@ class Socket{
         });
         
         this.socket.addEventListener("close", (event) => {
-            console.error("Socket closed: ", event);
+            console.log("Socket closed: ", event);
         })
     }
     

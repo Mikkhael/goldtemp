@@ -47,17 +47,33 @@ body{
     margin-top: 5vh;
 }
 .temp>*{
+    display: flex;
+    justify-content: space-around;
+    flex-direction: column;
     word-wrap: break-word;
     flex-grow: 1;
     border: 2.5px black solid;
     flex-basis: 19vw;
     padding: 0.1em;
-    text-align: center;
     align-items: center;
     font-size: 1.5em;
     font-family: Arial;
     color:black;
 }     
+.TherName{
+    font-size: 1.25em;
+}
+.Temp{
+    font-size: 4em;
+    white-space: nowrap;
+    color: rgb(164, 0, 0);
+}
+.Times{
+    color: rgb(105, 105, 105);
+    white-space: nowrap;
+    align-self: flex-start;
+    margin-left: 1vw;
+}
 .bg{
     position: absolute;
     top: 0px;

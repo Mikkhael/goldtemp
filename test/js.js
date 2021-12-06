@@ -38,6 +38,7 @@ function load_config(cfg){
 
 const messages = document.getElementById('messages');
 
+//@ts-ignore
 let socket = new Socket();
 
 onGetLastTemperatures = function(count, timestamps, thermometer_ids, measurements){
@@ -81,7 +82,7 @@ function setConfig(){
     socket.sendSetConfig(cfg);
 }
 
-function reboonNetwork(){
+function rebootNetwork(){
     socket.sendRebootNetwork();
 }
 function saveConfig(){

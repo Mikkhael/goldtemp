@@ -170,6 +170,12 @@ let onGetConfig = function(device_id, cfg){ console.log(arguments); }
 
 let onGetThermometerNames = function(){ console.log(RecognizedDeviceNames); };
 
+/**
+ * @param {BigInt} device_id 
+ * @param {BigInt[]} timestamps 
+ * @param {number[]} values 
+ */
+let onGetMeasurementsSince = function(device_id, timestamps, values){ console.log(arguments); };
 class Socket{
     constructor(address = getDefaultSocketAddress(), heartbeat_delay = 20000){
         this.address = address;
@@ -210,6 +216,10 @@ class Socket{
                         }
                         case 61:{
                             this.handleGetConfig(buffer);
+                            break;
+                        }
+                        case 101:{
+                            this.handleGetMeasurementsSince(buffer);
                             break;
                         }
                     }
@@ -322,6 +332,22 @@ class Socket{
         ]);
         this.socket.send(buffer);
     }
+
+    /**
+     * @param {BigInt|string} thermometer_id 
+     * @param {Date} from 
+     * @param {Date} to 
+     */
+    sendGetMeasurementsSince(thermometer_id, from, to){
+        console.log(thermometer_id, BigInt(thermometer_id.toString()));
+        const buffer = encode_buffer(1+8+8+8, [
+            ['u8', 100],
+            ['u64', BigInt(thermometer_id.toString())],
+            ['u64', from.getTime()],
+            ['u64', to.getTime()],
+        ]);
+        this.socket.send(buffer);
+    }
     
     /**
      * @param {ArrayBuffer} buffer 
@@ -402,6 +428,31 @@ class Socket{
         }
         onGetThermometerNames();
     }
+    
+    /**
+     * @param {ArrayBuffer} buffer 
+     */
+     handleGetMeasurementsSince(buffer){
+        try{
+            const res_header = decode_buffer(buffer, [
+                'u64 thermometer_id',
+                'u32 count'
+            ], 1);
+            const res_data = decode_buffer(buffer, [
+                `u64 timestamps ${res_header.count}`,
+                `i16 values ${res_header.count}`
+            ], 1+8+4);
+            onGetMeasurementsSince(res_header.thermometer_id, res_data.timestamps, res_data.values);
+        }catch(err){
+            if(err instanceof RangeError){
+                console.error(`GetConfig: Received invalid length buffer: `, new Uint8Array(buffer));
+            }else{
+                throw err;
+            }
+        }
+    }
+
+
 };
 
 /*

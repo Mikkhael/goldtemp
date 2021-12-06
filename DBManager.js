@@ -158,6 +158,22 @@ class DBManager{
             next(err, result);
         });
     }
+
+    /**
+     * @param {BigInt} id 
+     * @param {BigInt} from
+     * @param {BigInt} to
+     */
+    get_measurements_since(id, from, to, next = function(err, result){} ){
+        const query = `SELECT value, UNIX_TIMESTAMP(time) as time FROM ${table_name} WHERE thermometer_id=${id.toString()} AND UNIX_TIMESTAMP(time) BETWEEN ${from} AND ${to}`;
+        this.query_with_reconnect(query, function(err, result, fields){
+            if(err){
+                console.error("Error while performing get_measurements_since query: ", err);
+                next(err);
+            }
+            next(err, result);
+        });
+    }
     
 };
 

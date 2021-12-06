@@ -125,6 +125,20 @@ Get Thermometer Names:
 Response:
     - JSON {thermometer_id: thermometer_name}
 
+
+(CLIENT -> SERVER)
+Get Measurements Since:
+    - uint8 request_type 100
+    - uint64 thermometer_id
+    - uint64 timestamp_from
+    - uint64 timestamp_to
+(CLIENT <- SERVER)
+Response:
+    - uint8 request_type 101
+    - uint64 thermometer_id
+    - uint32 count
+    - uint64 timestamps[count]
+    - int16 values[count]
 */
 
 const DEVICE_CONFIG_LEN = 32+32+102+2+8;
@@ -282,7 +296,9 @@ const RequestTypes = {
     SaveConfig: 72,
     StartSleeping: 80,
     SetSleepingTime: 81,
-    GetThermometerNamesRequest: 90
+    GetThermometerNamesRequest: 90,
+    GetMeasurementsSince: 100,
+    GetMeasurementsSinceResponse: 101
 };
 Object.freeze(RequestTypes);
 
@@ -359,6 +375,10 @@ function handleMessage(ws, data, isBinary){
         }
         case RequestTypes.GetThermometerNamesRequest: {
             handleGetThermometerNameRequest(ws, data);
+            break;
+        }
+        case RequestTypes.GetMeasurementsSince: {
+            handleGetMeasurementsSince(ws, data);
             break;
         }
         default: {
@@ -632,6 +652,39 @@ function handleGetThermometerNameRequest(ws, payload){
     })
 }
 
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} payload 
+ */
+function handleGetMeasurementsSince(ws, payload){
+    if(payload.length != 25){
+        console.error(`Error: invalid GetMeasurementsSince Size: ${payload.length} (expected 25)` );
+        return;
+    }
+
+    const id = payload.readBigUInt64LE(1);
+    const from = payload.readBigUInt64LE(1+8);
+    const to = payload.readBigUInt64LE(1+8+8);
+
+    db.get_measurements_since(id, from, to, (err, result) => {
+        if(err){
+            return;
+        }
+        const count = result.length;
+        const buffer = Buffer.allocUnsafe(1 + 8 + 4 + count*(8+2));
+        buffer.writeUInt8(RequestTypes.GetMeasurementsSinceResponse, 0);
+        buffer.writeBigUInt64LE(id, 1);
+        buffer.writeUInt32LE(count, 1+8);
+        for(let i = 0; i<count; i++){
+            buffer.writeBigUInt64LE(BigInt(result[i].time),  1+8+4+(i*8));
+        }
+        for(let i = 0; i<count; i++){
+            buffer.writeInt16LE(result[i].value, 1+8+4+(count*8)+(i*2));
+        }
+
+        ws.send(buffer);
+    })
+}
 
 const wss = new WebSocketServer({server});
 wss.on('connection', function(/**@type {WebSocketWithSession} */ws, req) {

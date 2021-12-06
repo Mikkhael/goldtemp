@@ -87,7 +87,7 @@ function Sth(site){fetch(site)
         for(let i=0; i<count; i++){
             thermometers[ thermometer_ids[i] ] = {
                 time: timestamps[i],
-                value: measurements[i],
+                value: Math.round(measurements[i] * 100) / 100,
                 id: thermometer_ids[i]
             };
         }

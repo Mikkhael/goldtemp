@@ -65,14 +65,24 @@ function Sth(site){fetch(site)
     //@ts-ignore
     let socket = new Socket();
 
-    
+    /**@param {number} value */
+    function pad_temperature(value){
+        const value_str = value.toString();
+        const value_parts = value_str.split('.');
+        value_parts[0] = value_parts[0].padStart(3, ' ');
+        if(value_parts.length == 1)
+            value_parts[1] = "";
+        value_parts[1] = value_parts[1].padEnd(2, '0');
+        return value_parts.join('.').replace(/ /g, '&nbsp;');
+    }
+
     function reloadTemps(){
         document.getElementById('temp').innerHTML = "";
         
         for(let id in thermometers){
             let div = addElement();
             div.querySelector(".TherName").innerHTML = getDeviceNameById(thermometers[id].id);
-            div.querySelector(".Temp").innerHTML = `${thermometers[id].value} ℃`;
+            div.querySelector(".Temp").innerHTML = `${pad_temperature(thermometers[id].value)}℃`;
             
             let fmt = new Intl.DateTimeFormat([], {dateStyle: "short", timeStyle: 'medium'});
             let date = new Date(Number(thermometers[id].time));
@@ -107,14 +117,91 @@ function Sth(site){fetch(site)
         reloadTemps();
     }
     
-    
-    // To poniżęj jest tylko i wyłącznie dla testów
-    setTimeout(() => {
+    onGetLogs = function(important, id, data){
+        document.getElementById('logs_elem').innerHTML = data;
+    }
+
+    onGetConfig = function(id, cfg){
+        //@ts-expect-error
+        document.getElementById('settings_1').value = cfg.cred_ssid;
+        //@ts-expect-error
+        document.getElementById('settings_2').value = cfg.cred_pass;
+        //@ts-expect-error
+        document.getElementById('settings_3').value = cfg.ws_host;
+        //@ts-expect-error
+        document.getElementById('settings_4').value = cfg.ws_port.toString();
+        //@ts-expect-error
+        document.getElementById('settings_5').value = cfg.sample_interval.toString();
+    }
+
+    function setConfig(){
+        const cfg = new Config();
+        //@ts-expect-error
+        cfg.cred_ssid = document.getElementById('settings_1').value;
+        //@ts-expect-error
+        cfg.cred_pass = document.getElementById('settings_2').value;
+        //@ts-expect-error
+        cfg.ws_host = document.getElementById('settings_3').value;
+        //@ts-expect-error
+        cfg.ws_port = +document.getElementById('settings_4').value;
+        //@ts-expect-error
+        cfg.sample_interval = +document.getElementById('settings_5').value;
+
+        socket.sendSetConfig(cfg);
+    }
+    function setSleepNetwork(){
+        //@ts-expect-error
+        const sh = +document.getElementById("sleep_1").value || 0;
+        //@ts-expect-error
+        const sm = +document.getElementById("sleep_2").value || 0;
+        //@ts-expect-error
+        const dh = +document.getElementById("sleep_3").value || 0;
+        //@ts-expect-error
+        const dm = +document.getElementById("sleep_4").value || 0;
+
+        socket.sendSetSleepingTime(sh*60+sm, dh*60+dm)
+    }
+    function getConfig(){
+        socket.sendGetConfig();
+    }
+    function saveConfig(){
+        socket.sendSaveConfig();
+    }
+    function rebootNetwork(){
+        socket.sendRebootNetwork();
+    }
+
+    function getLogs(important = false){
+        socket.sendGetLogs(important);
+    }
+
+    let get_device_names_interval = null;
+    let last_measurements_interval = null;
+
+    onConnect = function(){
+        if(get_device_names_interval)
+            clearInterval(get_device_names_interval);
+        if(last_measurements_interval)
+            clearInterval(last_measurements_interval);
+        get_device_names_interval = setInterval(() => {
+            socket.sendGetThermometerNames();
+        }, 60 * 1000);
+        last_measurements_interval = setInterval(()=>{
+            socket.sendGetLatestTemperatures();
+        }, 5000);
+        
         socket.sendGetThermometerNames();
-    }, 2000);
-    setTimeout(() => {
         socket.sendGetLatestTemperatures();
-    }, 3000);
+    }
+
+
+    // To poniżęj jest tylko i wyłącznie dla testów
+    // setTimeout(() => {
+    //     socket.sendGetThermometerNames();
+    // }, 2000);
+    // setTimeout(() => {
+    //     socket.sendGetLatestTemperatures();
+    // }, 3000);
     
     // Tą funkcję wywołać można ręcznie w konsolce
     function generate_test_thermometers_output(){
@@ -132,4 +219,4 @@ function Sth(site){fetch(site)
         );
     }
 
-    generate_test_thermometers_output();
+    //generate_test_thermometers_output();

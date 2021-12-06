@@ -176,6 +176,9 @@ let onGetThermometerNames = function(){ console.log(RecognizedDeviceNames); };
  * @param {number[]} values 
  */
 let onGetMeasurementsSince = function(device_id, timestamps, values){ console.log(arguments); };
+
+
+let onConnect = function(){};
 class Socket{
     constructor(address = getDefaultSocketAddress(), heartbeat_delay = 20000){
         this.address = address;
@@ -196,6 +199,7 @@ class Socket{
         this.socket.addEventListener('open', (event) => {
             console.log('Connected To server: ', event);
             this.#_sendHeartbeat();
+            onConnect();
         });
     
         // Listen for messages

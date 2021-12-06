@@ -13,6 +13,11 @@ body{
     width: 100%;
     background-color: rgba(192,192,192,15);
 }
+.center_flex{
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+}
 .tab{
     flex-direction: row;
     display: flex;
@@ -67,6 +72,7 @@ body{
     font-size: 4em;
     white-space: nowrap;
     color: rgb(164, 0, 0);
+    font-family: Consolas;
 }
 .Times{
     color: rgb(105, 105, 105);
@@ -192,8 +198,8 @@ img{
     padding-top: 0.5vh;
     padding-bottom: 0.5vh;
     padding-left: 1vw;
-    font-size: 2em;
-    font-family: Arial;
+    font-size: 1em;
+    font-family: monospace;
     color:black;
     flex-wrap: wrap;
     border: 2.5px black solid;

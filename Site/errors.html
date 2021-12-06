@@ -13,8 +13,13 @@
     <div class="move">
         <div class="error">
             <div class="err">
-                <span style="font-weight: bold">Errors:</span>
+                <pre id="logs_elem" style="font-weight: bold"></pre>
             </div>
+        </div>
+        <br><br>
+        <div class="center_flex">
+            <input type="button" value="Get Logs" class="butt" onclick="getLogs(false)">
+            <input type="button" value="Get Important Logs" class="butt" onclick="getLogs(true)">
         </div>
     </div>
     <script>

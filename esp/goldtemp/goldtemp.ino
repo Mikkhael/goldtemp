@@ -30,6 +30,9 @@ const int WS_Reconnect_Interval = 5000;
 // Heroku Config
 // cfg3goldtemp.herokuapp.com,480
 
+// Laptop Config
+// cfg1Gold-Laptop,2qwertyui,3192.168.137.1,48080
+
 constexpr char AP_SSID[] = "ESP GOLDTEMP";
 constexpr char AP_PASS[] = "1234abcd";
 

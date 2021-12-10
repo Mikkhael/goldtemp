@@ -1,6 +1,6 @@
 //@ts-check
 
-function Sth(site){fetch(site)
+function Sth(site, next){fetch(site)
     .then(function(response) {
         return response.text()
     })
@@ -12,14 +12,17 @@ function Sth(site){fetch(site)
         div.style.display = "none";
         div.setAttribute("id", site);
         document.body.appendChild(div);
+        if(next){
+            next();
+        }
 })
 .catch(function(err) {  
     console.log('Failed to fetch page: ', err);  
 })};
 
-    Sth('settings.html');
-    Sth('graph.html');
-    Sth('errors.html'); 
+    Sth('settings.html' , () => {set_loaded("config"); });
+    Sth('graph.html', () => {startChart(); set_loaded("graph");});
+    Sth('errors.html', () => {set_loaded("errors"); }); 
 
     function disableAll(){
         document.getElementById("settings.html").style.display = "none";
@@ -57,8 +60,13 @@ function Sth(site){fetch(site)
         <span class="Times" style="font-weight: bold"></span>`;
         return newDiv;
     }
-
-    var a = document.getElementById("temp");
+    
+    function addGraphThermometerElement(){
+        var newDiv = document.createElement("div");
+        newDiv.className = "GraphRecord";
+        newDiv.innerHTML = `<span class="GraphRecordThermometer">(Thermometer Name)</span>`
+        return newDiv;
+    }
 
     var thermometers = {};
 
@@ -78,6 +86,7 @@ function Sth(site){fetch(site)
 
     function reloadTemps(){
         document.getElementById('temp').innerHTML = "";
+        document.getElementById('graphRecords').innerHTML = "";
         
         for(let id in thermometers){
             let div = addElement();
@@ -89,7 +98,20 @@ function Sth(site){fetch(site)
             
             div.querySelector(".Times").innerHTML = `${fmt.format(date)}`;
             document.getElementById('temp').appendChild(div);
+            
+            div = addGraphThermometerElement();
+            div.querySelector(".GraphRecordThermometer").innerHTML = getDeviceNameById(thermometers[id].id);
+            div.setAttribute("device_id", thermometers[id].id);
+            div.onclick = () => {clickedRecord(div, thermometers[id].id)};
+            div.setAttribute("is_selected", thermometers[id].selected ? "1" : "0");
+            
+            document.getElementById('graphRecords').appendChild(div);
         }
+    }
+    
+    function clickedRecord(element, id){
+        thermometers[id].selected = !thermometers[id].selected;
+        element.setAttribute("is_selected", thermometers[id].selected ? "1" : "0");
     }
     
     onGetLastTemperatures = function(count, timestamps, thermometer_ids, measurements){
@@ -98,17 +120,10 @@ function Sth(site){fetch(site)
             thermometers[ thermometer_ids[i] ] = {
                 time: timestamps[i],
                 value: Math.round(measurements[i] * 100) / 100,
-                id: thermometer_ids[i]
+                id: thermometer_ids[i],
+                selected: thermometers[thermometer_ids[i]]?.selected || false
             };
         }
-
-        /*getConfig();
-        setConfig();
-        saveConfig();
-        rebootNetwork();
-        setSleepNetwork();*/
-
-
         reloadTemps();
     }
     
@@ -132,6 +147,21 @@ function Sth(site){fetch(site)
         document.getElementById('settings_4').value = cfg.ws_port.toString();
         //@ts-expect-error
         document.getElementById('settings_5').value = cfg.sample_interval.toString();
+    }
+    
+    onGetMeasurementsSince = function(id, timestamps, values){
+        console.log("TL: ", timestamps.length);
+        console.log(timestamps);
+        const data = [];
+        for(let i=0; i<timestamps.length; i++){
+            data.push({
+                x: new Date(Number(timestamps[i])*1000),
+                y: raw_to_c(values[i]),
+            });
+        }
+        
+        addChartDataset(getDeviceNameById(id.toString()), data);
+        updateChart();
     }
 
     function setConfig(){
@@ -174,26 +204,70 @@ function Sth(site){fetch(site)
     function getLogs(important = false){
         socket.sendGetLogs(important);
     }
-
+    
+    function getSelectedIds(){
+        return Object.values(thermometers).filter(x => x.selected).map(x => x.id);
+    }
+    
+    function drawGraph(){
+        const ids = getSelectedIds();
+        const from = /** @type {HTMLInputElement} */ ( document.getElementById('graph_date_from') ).value;
+        const to =   /** @type {HTMLInputElement} */ ( document.getElementById('graph_date_to')   ).value;
+        console.log(ids, from, to);
+        if(ids && from && to){
+            getGraph(ids, new Date(from), new Date(to));
+        }
+    }
+    
+    /**
+     * @param {BigInt[]} thermometer_ids 
+     * @param {Date} from 
+     * @param {Date} to 
+     */
+    function getGraph(thermometer_ids, from, to){
+        clearChart();
+        console.log(from, to);
+        for(let id of thermometer_ids){
+            socket.sendGetMeasurementsSince(id, from, to);
+        }
+    }
+    
     let get_device_names_interval = null;
     let last_measurements_interval = null;
 
-    onConnect = function(){
+    
+    function setRefreshInterval(thermometerNamesRefresh = 60 * 1000, latestTemperaturesRefresh = 60 * 1000){
         if(get_device_names_interval)
             clearInterval(get_device_names_interval);
         if(last_measurements_interval)
             clearInterval(last_measurements_interval);
+            
         get_device_names_interval = setInterval(() => {
             socket.sendGetThermometerNames();
-        }, 60 * 1000);
+        }, thermometerNamesRefresh);
         last_measurements_interval = setInterval(()=>{
             socket.sendGetLatestTemperatures();
-        }, 5000);
+        }, latestTemperaturesRefresh);
         
         socket.sendGetThermometerNames();
         socket.sendGetLatestTemperatures();
     }
+    
+    onConnect = function(){
+        set_loaded("socket");
+    }
 
+    let parts_to_load = ["errors", "socket", "config", "graph"]
+    function set_loaded(name){
+        parts_to_load = parts_to_load.filter(x => x != name);
+        if(parts_to_load.length == 0){
+            setup();
+        }
+    }
+    
+    function setup(){
+        setRefreshInterval();
+    }
 
     // To poniżęj jest tylko i wyłącznie dla testów
     // setTimeout(() => {

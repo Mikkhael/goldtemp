@@ -16,16 +16,21 @@
         <div class="move">
         <div class="block">
             <div class="thermometers">
-                <span style="font-weight: bold">Thermometers:</span>
+                <p style="font-weight: bold">Thermometers:</p>
+                <div id="graphRecords">
+                    
+                </div>
             </div>
             <div class="image">
-                <img src="kot.png" width="500"/>
+                <canvas id="graphCanvas"></canvas>
             </div>
         </div>
+        <div class="center_flex">
+            <input type="button" class="butt" value="Draw Graph" onclick="drawGraph()">
+            <p> From: <input type="date" id="graph_date_from"> </p> 
+            <p> To: <input type="date" id="graph_date_to"> </p>
         </div>
-    <script>
-        
-    </script>
+        </div>
 
 </body>
 </html>

@@ -166,25 +166,42 @@ body{
     font-size: 2em;
     margin-right: 1vw;
     margin-left: 1vw;
-    flex: 1;
     display: flex;
     flex-wrap: wrap;
 }
 .thermometers{
     padding-left: 1vw;
-    padding-top: 0.5vh;
     flex-basis: 1px;
     flex-grow: 1;
+}
+.thermometers > p:first-child {
+    border-bottom: 3px solid black;
+}
+#graphRecords{
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+.GraphRecord{
+    cursor: pointer;
+    border-bottom: 1px solid black;
+    margin-bottom: 10px;
+    background-color: transparent;
+    user-select:none;
+}
+.GraphRecord[is_selected="1"]{
+    background-color: rgba(165, 214, 236, 0.733);
 }
 .image{
     outline: 1px solid  black;
     flex-basis: 1px;
     flex-grow: 1.62;
+    min-width: 50%;
+    resize: vertical;
+    overflow: hidden;
 }
-img{
-    padding: 0px;
-    margin: 0px;
-    display: block;
+.image > canvas{
+    display:inline;
 }
 .error{
     margin-top: 5vh;

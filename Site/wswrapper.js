@@ -208,7 +208,7 @@ class Socket{
             if(msg instanceof Blob){
                 msg.arrayBuffer().then(buffer => {
                     const array = new Uint8Array(buffer)
-                    console.log(array);
+                    //console.log(array);
                     switch(array[0]){
                         case 20:{
                             this.handleGetLatestTemperatures(buffer);
@@ -343,12 +343,12 @@ class Socket{
      * @param {Date} to 
      */
     sendGetMeasurementsSince(thermometer_id, from, to){
-        console.log(thermometer_id, BigInt(thermometer_id.toString()));
+        //console.log(thermometer_id, BigInt(thermometer_id.toString()));
         const buffer = encode_buffer(1+8+8+8, [
             ['u8', 100],
             ['u64', BigInt(thermometer_id.toString())],
-            ['u64', from.getTime()],
-            ['u64', to.getTime()],
+            ['u64', Math.floor(from.getTime()/1000)],
+            ['u64', Math.floor(to.getTime()/1000)],
         ]);
         this.socket.send(buffer);
     }

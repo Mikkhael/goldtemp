@@ -139,6 +139,11 @@ Response:
     - uint32 count
     - uint64 timestamps[count]
     - int16 values[count]
+    
+(CLIENT -> SERVER)
+Set Managed Devices:
+    - uint8 request_type 200
+    - uint32_t device_ids[]
 */
 
 const DEVICE_CONFIG_LEN = 32+32+102+2+8;
@@ -149,6 +154,22 @@ class WebSocketSession{
         this.device_id = 0;
         this.remote_address = "?";
         this.local_address = "?";
+        /**@type {number[]} */
+        this.managed_devices_ids = [];
+    }
+    
+    getManagedDevices(){
+        /**@type {Object.<number, WebSocketWithSession>} */
+        let devices = {};
+        if(this.managed_devices_ids.length > 0){
+            for(let id of this.managed_devices_ids){
+                if(connected_devices[id])
+                    devices[id] = connected_devices[id];
+            }
+        }else{
+            devices = connected_devices;
+        }
+        return devices;
     }
 }
 
@@ -194,7 +215,8 @@ function handleForwardDefault(ws, name, expected_len, payload){
         console.error(`Error: invalid ${name} Size: ${payload.length} (expected ${expected_len})` );
         return;
     }
-    forwardMessageWithSeq(ws, connected_devices, payload, (err, device_ws) => {
+    
+    forwardMessageWithSeq(ws, ws.session.getManagedDevices(), payload, (err, device_ws) => {
         if(err){
             console.error(`Error while sending ${name}`);
         }else{
@@ -218,8 +240,9 @@ function handleForwardDefaultNoSeq(ws, name, expected_len, payload){
         console.error(`Error: invalid ${name} Size: ${payload.length} (expected ${expected_len})` );
         return;
     }
-    for(const device_id in connected_devices){
-        const device_ws = connected_devices[device_id];
+    const devices = ws.session.getManagedDevices();
+    for(const device_id in devices){
+        const device_ws = devices[device_id];
         device_ws.send(payload, err => {
             if(err){
                 console.error(`Error while sending ${name}`);
@@ -300,7 +323,8 @@ const RequestTypes = {
     SetSleepingTime: 81,
     GetThermometerNamesRequest: 90,
     GetMeasurementsSince: 100,
-    GetMeasurementsSinceResponse: 101
+    GetMeasurementsSinceResponse: 101,
+    SetManagedDevices: 200
 };
 Object.freeze(RequestTypes);
 
@@ -381,6 +405,10 @@ function handleMessage(ws, data, isBinary){
         }
         case RequestTypes.GetMeasurementsSince: {
             handleGetMeasurementsSince(ws, data);
+            break;
+        }
+        case RequestTypes.SetManagedDevices: {
+            handleSetManagedDevices(ws, data);
             break;
         }
         default: {
@@ -609,6 +637,7 @@ function handleSaveConfig(ws, payload){
 
 const SleepingManager = require('./SleepingManager');
 const { ClientRequest } = require('http');
+const { devNull } = require('os');
 const sleepingManager = new SleepingManager();
 
 
@@ -647,6 +676,27 @@ function handleSetSleepingTime(ws, payload){
         sleepingManager.set_sleep_time(start_minutes, duration_minutes);
         console.log(`Set Sleep Time Config to: ${Math.round(start_minutes/60)}:${start_minutes%60} UTC/${Math.round(duration_minutes/60)}:${duration_minutes%60}`);
     });
+}
+
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {Buffer} payload 
+ */
+function handleSetManagedDevices(ws, payload){
+    if(ws.session.device_id !== 0){
+        console.error("Error: Received SetManagedDevices Request from a device with id: " + ws.session.device_id);
+        return;
+    }
+    if(payload.length % 4 !== 1){
+        console.error("Error: Received SetManagedDevices with invalid length: " + payload.length);
+        return;
+    }
+    let ids = [];
+    for(let i=0; i<(payload.length-1) / 4; i++){
+        const id = payload.readUInt32LE(1 + i*4);
+        ids.push(id);
+    }
+    ws.session.managed_devices_ids = ids;
 }
 
 

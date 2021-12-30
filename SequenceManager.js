@@ -45,7 +45,7 @@ class SequenceManager{
             }
         }
         if(i == this.max_seq){
-            setTimeout(this.register_new.bind(this, next), 1000);
+            setTimeout(this.register_new.bind(this, ws, next), 1000);
             return;
         }
         this.sequences[number] = new TransmissionSequence(number, ws);

@@ -251,6 +251,13 @@ function Sth(site, next){fetch(site)
         }
     }
     
+    function setManagedDevices(){
+        const searchParams = new URLSearchParams(window.location.search);
+        const ids = searchParams.getAll("id").join(",").split(",").map(x => +x).filter(x => x);
+        console.log(`IDS: `, ids);
+        socket.sendSetManagedDevices(ids);
+    }
+    
     let get_device_names_interval = null;
     let last_measurements_interval = null;
 
@@ -272,8 +279,10 @@ function Sth(site, next){fetch(site)
         socket.sendGetLatestTemperatures();
     }
     
+    
     onConnect = function(){
         set_loaded("socket");
+        setManagedDevices();
     }
 
     let parts_to_load = ["errors", "socket", "config", "graph"]

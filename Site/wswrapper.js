@@ -354,6 +354,19 @@ class Socket{
     }
     
     /**
+     * @param {number[]} ids 
+     */
+    sendSetManagedDevices(ids){
+        if(ids.length > 0){
+            const buffer = encode_buffer(1 + ids.length*4, [
+                ['u8', 200],
+                ...(ids.map(x => /**@type {[string, number]}*/ (['u32', x]) ))
+            ]);
+            this.socket.send(buffer);
+        }
+    }
+    
+    /**
      * @param {ArrayBuffer} buffer 
      */
     handleGetLatestTemperatures(buffer){

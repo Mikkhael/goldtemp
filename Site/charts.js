@@ -17,7 +17,11 @@ const config = {
             x:{
                 type: "time",
                 time:{
-                    minUnit: "minute"
+                    minUnit: "minute",
+                    displayFormats:{
+                        minute: "HH:mm",
+                        hour: "M.D, H:00"
+                    }
                 }
             }
         }
@@ -50,9 +54,10 @@ function addChartDataset(name, data){
 function updateChart(){
     const l = chart_data.datasets.length;
     for(let i = 0; i<l; i++){
-        chart_data.datasets[i].pointBackgroundColor = 
-        chart_data.datasets[i].backgroundColor =
-        chart_data.datasets[i].borderColor = `hsl(${i/l*360}, 50%, 70%)`;
+        const colorValue = i/l*360;
+        chart_data.datasets[i].pointBackgroundColor = `hsla(${colorValue}, 50%, 70%, 90%)`;
+        chart_data.datasets[i].backgroundColor = `hsla(${colorValue}, 50%, 70%, 90%)`;
+        chart_data.datasets[i].borderColor = `hsla(${colorValue}, 50%, 70%, 60%)`;
     }
     chart.update();
 }

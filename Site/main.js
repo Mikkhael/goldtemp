@@ -209,13 +209,29 @@ function Sth(site, next){fetch(site)
         return Object.values(thermometers).filter(x => x.selected).map(x => x.id);
     }
     
+    /**
+     * @param {Date} date 
+     */
+    function getBeginningOfDay(date){
+        date.setMilliseconds(0);
+        date.setSeconds(0);
+        date.setMinutes(0);
+        date.setHours(0);
+        return date;
+    }
+    
     function drawGraph(){
         const ids = getSelectedIds();
         const from = /** @type {HTMLInputElement} */ ( document.getElementById('graph_date_from') ).value;
-        const to =   /** @type {HTMLInputElement} */ ( document.getElementById('graph_date_to')   ).value;
-        console.log(ids, from, to);
-        if(ids && from && to){
-            getGraph(ids, new Date(from), new Date(to));
+        const to   = /** @type {HTMLInputElement} */ ( document.getElementById('graph_date_to')   ).value;
+        let fromDate = new Date(from);
+        let toDate   = new Date(to);
+        if(from == ""){ fromDate = getBeginningOfDay(new Date()); }
+        if(to   == ""){ toDate   = getBeginningOfDay(new Date()); }
+        toDate = new Date(toDate.getTime() + 1000*60*60*24);
+        console.log(ids, from, to, fromDate, toDate);
+        if(ids){
+            getGraph(ids, fromDate, toDate);
         }
     }
     

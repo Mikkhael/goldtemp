@@ -33,7 +33,7 @@ const int WS_Reconnect_Interval = 5000;
 // Laptop Config
 // cfg1Gold-Laptop,2qwertyui,3192.168.137.1,48080
 
-constexpr char AP_SSID[] = "ESP GOLDTEMP";
+constexpr char AP_SSID[] = "ESP ";
 constexpr char AP_PASS[] = "1234abcd";
 
 struct ConfigWithWsPayload{
@@ -94,6 +94,7 @@ void set_config(char key, String value){
     }
   }
   validate_config();
+  set_new_measurement_interval(cfg.SAMPLE_INTERVAL);
   config_changed = true;
 }
 
@@ -740,11 +741,11 @@ void telnet_begin(){
 
 void show_config(){
   logln<true>("Config" , config_changed ? "*" : "" , 
-    "|CRED_SSID:", cfg.CRED_SSID,
-    "|CRED_PASS:", cfg.CRED_PASS,
-    "|WS_HOST:", cfg.WS_HOST,
-    "|WS_PORT:", cfg.WS_PORT,
-    "|SAMPLE_INTERVAL:", cfg.SAMPLE_INTERVAL);
+    "\n|CRED_SSID:", cfg.CRED_SSID,
+    "\n|CRED_PASS:", cfg.CRED_PASS,
+    "\n|WS_HOST:", cfg.WS_HOST,
+    "\n|WS_PORT:", cfg.WS_PORT,
+    "\n|SAMPLE_INTERVAL:", cfg.SAMPLE_INTERVAL);
 }
 
 void EEPROM_init(){
@@ -774,11 +775,19 @@ void setup(void)
 {
   Serial.begin(115200);
   Serial.println();
+
+  uint8_t MAC[6];
+  char AP_SSID_full[40];
+  WiFi.macAddress(MAC);
+  DEVICE_ID = (((uint32_t)MAC[2]) << (8*3)) + (((uint32_t)MAC[3]) << (8*2)) + (((uint32_t)MAC[4]) << (8*1)) + ((uint32_t)MAC[5]);
+  sprintf(AP_SSID_full, "%s%x", AP_SSID, DEVICE_ID);
+  
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS);
+  WiFi.softAP(AP_SSID_full, AP_PASS);
   EEPROM_init();
   reboot_network();
   telnet_begin();
+  
   set_new_measurement_interval(cfg.SAMPLE_INTERVAL);
   rescan_devices_with_log();
 }

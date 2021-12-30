@@ -117,6 +117,9 @@ function Sth(site, next){fetch(site)
     onGetLastTemperatures = function(count, timestamps, thermometer_ids, measurements){
         
         for(let i=0; i<count; i++){
+            if(thermometers[thermometer_ids[i]] && thermometers[thermometer_ids[i]].time > timestamps[i]){
+                continue;
+            }
             thermometers[ thermometer_ids[i] ] = {
                 time: timestamps[i],
                 value: Math.round(measurements[i] * 100) / 100,
@@ -252,7 +255,7 @@ function Sth(site, next){fetch(site)
     let last_measurements_interval = null;
 
     
-    function setRefreshInterval(thermometerNamesRefresh = 60 * 1000, latestTemperaturesRefresh = 60 * 1000){
+    function setRefreshInterval(thermometerNamesRefresh = 10 * 60 * 1000, latestTemperaturesRefresh = 5 * 60 * 1000){
         if(get_device_names_interval)
             clearInterval(get_device_names_interval);
         if(last_measurements_interval)

@@ -280,6 +280,8 @@ function handleForwardBackDefault(ws, name, expected_len, payload, leneq = true)
 
 /**@type {Object.<number, WebSocketWithSession>} */
 const connected_devices = {};
+/**@type {WebSocketWithSession[]} */
+const connected_clients = [];
 
 const RequestTypes = {
     RegisterAsDevice: 1,
@@ -449,9 +451,55 @@ function handlePostNewTemperatures(ws, data){
         
     const times = measurements_timestamps.map(x => x === 0n ? new Date() : new Date(Number(x)*1000));
     db.insert_new_measurements(times, thermometers_ids, measurements);
+    
+    preapareNewLatestTemperatures(times, thermometers_ids, measurements);
 }
 function invalidPostNewTemperatureRequest(ws, data, reason){
     console.error(`Invalid Post New Request Temperature Request: `, reason);
+}
+/**
+ * @param {Date[]} times 
+ * @param {bigint[]} thermometer_ids 
+ * @param {number[]} measurements 
+ */
+function preapareNewLatestTemperatures(times, thermometer_ids, measurements){
+    let maxTimeIndex = 0;
+    for(let i=1; i<times.length; i++){
+        if(times[i].getDate() > times[i].getDate()){
+            maxTimeIndex = i;
+        }
+    }
+    /**@type {{time: Date, id: (string | bigint), value: number}[]} */
+    const result = [];
+    for(let i=0; i<thermometer_ids.length; i++){
+        result.push({
+            time: times[maxTimeIndex],
+            id: thermometer_ids[i],
+            value: measurements[maxTimeIndex * thermometer_ids.length + i]
+        });
+    }
+    const buffer = convertTemperaturesResultToLastMeasurementsPacketBuffer(result);
+    for(let clinet_ws of connected_clients){
+        if(clinet_ws.session.device_id === 0){
+            clinet_ws.send(buffer);
+        }
+    }
+}
+
+/**
+ * @param {{time: Date, id: (string | bigint), value: number}[]} result 
+ */
+function convertTemperaturesResultToLastMeasurementsPacketBuffer(result){
+    const count = result.length;
+    let buffer = Buffer.allocUnsafe(1 + 4 + count * (8+8+2));
+    buffer.writeUInt8(RequestTypes.GetLastMeasurements, 0);
+    buffer.writeUInt32LE(count, 1);
+    for(let i=0; i<count; i++){
+        buffer.writeBigInt64LE(BigInt(new Date(result[i].time).getTime()), 5 + i*8);
+        buffer.writeBigUInt64LE(BigInt(result[i].id), 5 + (count + i)*8);
+        buffer.writeInt16LE(result[i].value, 5 + count*16 + i*2);
+    }
+    return buffer;
 }
 
 /**
@@ -462,15 +510,7 @@ function handleGetLastMeasurements(ws){
         if(err){
             return;
         }
-        const count = result.length;
-        let buffer = Buffer.allocUnsafe(1 + 4 + count * (8+8+2));
-        buffer.writeUInt8(RequestTypes.GetLastMeasurements, 0);
-        buffer.writeUInt32LE(count, 1);
-        for(let i=0; i<count; i++){
-            buffer.writeBigInt64LE(BigInt(new Date(result[i].time).getTime()), 5 + i*8);
-            buffer.writeBigUInt64LE(BigInt(result[i].id), 5 + (count + i)*8);
-            buffer.writeInt16LE(result[i].value, 5 + count*16 + i*2);
-        }
+        const buffer = convertTemperaturesResultToLastMeasurementsPacketBuffer(result);
         ws.send(buffer);
     });
 }
@@ -568,6 +608,7 @@ function handleSaveConfig(ws, payload){
 /// Sleeping
 
 const SleepingManager = require('./SleepingManager');
+const { ClientRequest } = require('http');
 const sleepingManager = new SleepingManager();
 
 
@@ -694,8 +735,13 @@ wss.on('connection', function(/**@type {WebSocketWithSession} */ws, req) {
     ws.session.remote_address = `${socket.remoteAddress}/${socket.remotePort}`;
     console.log(`New WebSocket Connection:`,
                 ws.url, ws.session.local_address, ws.session.remote_address);
+    connected_clients.push(ws);
     ws.on('close', function(number, reason){
         console.log(`WebSocket Connection Closed:`, number , reason);
+        const index = connected_clients.indexOf(ws);
+        if(index > -1){
+            connected_clients.splice(index, 1);
+        }
         if(connected_devices[ws.session.device_id] === ws){
             delete connected_devices[ws.session.device_id];
         }

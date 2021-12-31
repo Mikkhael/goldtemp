@@ -87,7 +87,7 @@ class DBManager{
      */
     insert_new_measurements(times, thermometers_ids, values, next = function(err){}){
         //this.#_reconnect_if_nessesary(next, this.insert_new_measurements.bind(this, ...arguments));
-        const NO_VALUE = -200;
+        const NO_VALUE = -200*128;
         let query = `INSERT INTO ${table_name} (time, thermometer_id, value) VALUES `;
         for(let time_i=0; time_i<times.length; time_i++){
             const time = times[time_i];

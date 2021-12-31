@@ -765,7 +765,7 @@ void reboot_network(){
   WiFi.disconnect();
   logln("Connecting to WiFi...");
   WiFi.begin(cfg.CRED_SSID, cfg.CRED_PASS);
-  wait_for_wifi_to_connect();
+  wait_for_wifi_to_connect(16);
   telnet_begin();
   ws_begin();
   net_status_update(true);
@@ -832,7 +832,7 @@ IntervalExecution net_update_interval([]{
   //logln(millis());
   if(WiFi.status() != WL_CONNECTED){
     logln("Reconnecting to wifi...");
-    wait_for_wifi_to_connect();
+    wait_for_wifi_to_connect(2);
   }
 }, 200);
 

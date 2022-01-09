@@ -10,7 +10,7 @@ void set_new_measurement_interval(const uint64_t);
 
 //// CONFIG /////////////////////
 
-constexpr int  MAX_DEVICES = 10;
+constexpr int  MAX_DEVICES = 20;
 constexpr int  ONE_WIRE_BUS = D1;
 
 struct Config{
@@ -87,6 +87,8 @@ void set_config(char key, String value){
     }
     case '5':{
       cfg.SAMPLE_INTERVAL = value.toInt();
+      validate_config();
+      set_new_measurement_interval(cfg.SAMPLE_INTERVAL);
       break;
     }
     default:{
@@ -94,7 +96,6 @@ void set_config(char key, String value){
     }
   }
   validate_config();
-  set_new_measurement_interval(cfg.SAMPLE_INTERVAL);
   config_changed = true;
 }
 
@@ -660,6 +661,11 @@ bool getAllTemperatures(){
 
 bool complete_measurement_routine(){
   //measurements.clear();
+  if(measurements.commited_measurements >= Measurements::MAX_MEASUREMENTS){
+    logln<true>("MEasurements buffer is full, Sending measurements...");
+    if(!measurements.send_all_measurements())
+      return false;
+  }
   rescan_devices();
   request_temperatures();
   if(!getAllTemperatures()) return false;

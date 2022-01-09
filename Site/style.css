@@ -65,7 +65,9 @@ body{
     font-size: 1.5em;
     font-family: Arial;
     color:black;
-}     
+}
+
+
 .TherName{
     font-size: 1.25em;
 }
@@ -81,6 +83,16 @@ body{
     align-self: flex-start;
     margin-left: 1vw;
 }
+
+@media only screen and (max-width: 600px) {
+    .tabs{
+        font-size: 1em;
+    }
+    .temp>*{
+        font-size: 0.6em;
+    }
+}
+
 .bg{
     position: absolute;
     top: 0px;

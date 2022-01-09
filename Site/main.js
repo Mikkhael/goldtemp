@@ -83,7 +83,28 @@ function Sth(site, next){fetch(site)
         value_parts[1] = value_parts[1].padEnd(2, '0');
         return value_parts.join('.').replace(/ /g, '&nbsp;');
     }
-
+    
+    
+    let COLOR_COLD = [52, 213, 235];
+    let COLOR_HOT  = [255, 0, 0];
+    
+    let TEMPERATURE_COLD = 20;
+    let TEMPERATURE_HOT  = 50;
+    
+    function get_temp_color_raw(x){
+        if(x <= TEMPERATURE_COLD){
+            return COLOR_COLD;
+        }else if(x >= TEMPERATURE_HOT){
+            return COLOR_HOT;
+        }
+        return [0,0,0].map((_,i) =>  COLOR_COLD[i] + (COLOR_HOT[i] - COLOR_COLD[i]) * ((x-TEMPERATURE_COLD)/(TEMPERATURE_HOT - TEMPERATURE_COLD)) );
+    }
+    
+    function get_temp_color_rgb(x){
+        return `rgb(${get_temp_color_raw(x).join()})`;
+    }
+    
+    
     function reloadTemps(){
         document.getElementById('temp').innerHTML = "";
         document.getElementById('graphRecords').innerHTML = "";
@@ -92,6 +113,8 @@ function Sth(site, next){fetch(site)
             let div = addElement();
             div.querySelector(".TherName").innerHTML = getDeviceNameById(thermometers[id].id);
             div.querySelector(".Temp").innerHTML = `${pad_temperature(thermometers[id].value)}℃`;
+            //@ts-expect-error
+            div.querySelector(".Temp").style.color = get_temp_color_rgb(thermometers[id].value);
             
             let fmt = new Intl.DateTimeFormat([], {dateStyle: "short", timeStyle: 'medium'});
             let date = new Date(Number(thermometers[id].time));
@@ -136,7 +159,11 @@ function Sth(site, next){fetch(site)
     }
     
     onGetLogs = function(important, id, data){
-        document.getElementById('logs_elem').innerHTML = data;
+        let data_formated = data;
+        if(data.indexOf('\u0000') != -1){
+            data_formated = data.slice(data.indexOf('\u0000')+1) + data.slice(0, data.indexOf('\u0000'));
+        }
+        document.getElementById('logs_elem').innerHTML = data_formated;
     }
 
     onGetConfig = function(id, cfg){
@@ -155,14 +182,14 @@ function Sth(site, next){fetch(site)
     onGetMeasurementsSince = function(id, timestamps, values){
         console.log("TL: ", timestamps.length);
         console.log(timestamps);
-        const data = [];
+        let data = [];
         for(let i=0; i<timestamps.length; i++){
             data.push({
                 x: new Date(Number(timestamps[i])*1000),
                 y: raw_to_c(values[i]),
             });
         }
-        
+        data = data.sort((a, b) => a.x.getTime() - b.x.getTime());
         addChartDataset(getDeviceNameById(id.toString()), data);
         updateChart();
     }

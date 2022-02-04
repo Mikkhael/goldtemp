@@ -11,7 +11,8 @@ void set_new_measurement_interval(const uint64_t);
 //// CONFIG /////////////////////
 
 constexpr int  MAX_DEVICES = 20;
-constexpr int  ONE_WIRE_BUS = D1;
+constexpr int  ONE_WIRE_BUSES_COUNT = 2;
+constexpr int  ONE_WIRE_BUSES_LIST[ONE_WIRE_BUSES_COUNT] = {D1, D2};
 
 struct Config{
   char CRED_SSID[32] = "TP-LINK_FD2F53";
@@ -197,7 +198,7 @@ struct StrBuf : public Print{
   }
 };
 
-StrBuf<5000> log_buffer;
+StrBuf<4000> log_buffer;
 StrBuf<2000> important_log_buffer;
 
 template<bool IS_IMPORTANT = false, typename T, typename ... Ts>
@@ -250,12 +251,20 @@ void net_status_update(bool force = false){
 }
 
 //// ONEWIRE /////////////////////
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature sensors(&oneWire);
+
+OneWire oneWireList[ONE_WIRE_BUSES_COUNT] = {
+  OneWire(ONE_WIRE_BUSES_LIST[0]),
+  OneWire(ONE_WIRE_BUSES_LIST[1]),
+};
+DallasTemperature sensorsList[ONE_WIRE_BUSES_COUNT] = {
+  DallasTemperature(&oneWireList[0]),
+  DallasTemperature(&oneWireList[1]),
+};
 
 DeviceAddress addresses[MAX_DEVICES] {};
 uint64_t numAddresses[MAX_DEVICES] {};
 uint8_t numberOfDevices = 0;
+uint8_t numberOfDevicesPerBus[ONE_WIRE_BUSES_COUNT] = {0,0};
 
 void printAddress(DeviceAddress deviceAddress, char* destination)
 {
@@ -590,27 +599,37 @@ Measurements measurements;
 
 //// TERMOMETERS /////////////////////
 
-bool rescan_devices(){
-  sensors.begin();
-  numberOfDevices = sensors.getDeviceCount();
-  if(numberOfDevices <= 0 || numberOfDevices > MAX_DEVICES){
-    logln<true>("Too many Devices found: ", numberOfDevices);
-    return false;
-  }
-
-  for(uint8_t i=0; i<numberOfDevices; i++){
-    if(!sensors.getAddress(addresses[i], i)){
-      continue;
+bool rescan_devices(bool show_log = false){
+  numberOfDevices = 0;
+  
+  for(int busIndex = 0; busIndex < ONE_WIRE_BUSES_COUNT; busIndex++){
+    auto& sensors = sensorsList[busIndex];
+    if(show_log)
+      logln<true>("Scanning bus number: ", busIndex);
+    sensors.begin();
+    numberOfDevices += (numberOfDevicesPerBus[busIndex] = sensors.getDeviceCount());
+    if(numberOfDevices > MAX_DEVICES){
+      logln<true>("Too many Devices found: ", numberOfDevices);
+      return false;
     }
-	numAddresses[i] = addressToUint(addresses[i]);
-    //printAddress(addresses[i], stringAddresses + 16 * i);
+    if(show_log)
+      logln<true>("Found: ", numberOfDevicesPerBus[busIndex]);
+
+    for(int i=0; i<numberOfDevicesPerBus[busIndex]; i++){
+      const auto index = numberOfDevices - 1 - i;
+      if(!sensors.getAddress(addresses[index], i)){
+        continue;
+      }
+      numAddresses[index] = addressToUint(addresses[index]);
+      //printAddress(addresses[i], stringAddresses + 16 * i);
+    }
   }
   return true;
 }
 
 void rescan_devices_with_log(){
   const auto t1 = millis();
-  const bool res = rescan_devices();
+  const bool res = rescan_devices(true);
   const auto t2 = millis();
   logln("Scan took ", t2-t1, "millis.");
   if(!res){
@@ -625,13 +644,15 @@ void rescan_devices_with_log(){
 
 void request_temperatures(){
   //const auto t1 = millis();
-  sensors.requestTemperatures();
+  for(auto& sensors : sensorsList){
+    sensors.requestTemperatures();
+  }
   //const auto t2 = millis();
   //logln("Measurement took ", t2-t1, " millis.");
 }
 
-bool getTemperature(DeviceAddress deviceAddress, int16_t& result){
-  result = sensors.getTemp	(deviceAddress);
+bool getTemperature(DeviceAddress deviceAddress, int busIndex, int16_t& result){
+  result = sensorsList[busIndex].getTemp(deviceAddress);
   if(result == DEVICE_DISCONNECTED_RAW)
     return false;
   return true;
@@ -642,19 +663,24 @@ float raw_to_c(const int16_t raw){
 }
 
 bool getAllTemperatures(){
-  for(uint8_t i=0; i<numberOfDevices; i++){
-    int16_t value;
-    const auto t1 = millis();
-    const bool res = getTemperature(addresses[i], value);
-    const auto t2 = millis();
-    if(res)
-      if(!measurements.set_value(numAddresses[i], value)){
-		  return false;
-	  }
-    logln(numAddresses[i], ": ", raw_to_c(value), " [", value , res ? "] (" : "]err (", t2 - t1, ")");
+  int indexOffset = 0;
+  for(int busIndex=0; busIndex < ONE_WIRE_BUSES_COUNT; busIndex++){
+    indexOffset += numberOfDevicesPerBus[busIndex];
+    for(uint8_t i=0; i<numberOfDevicesPerBus[busIndex]; i++){
+      int16_t value;
+      const auto index = indexOffset - 1 - i;
+      const auto t1 = millis();
+      const bool res = getTemperature(addresses[index], busIndex, value);
+      const auto t2 = millis();
+      if(res)
+        if(!measurements.set_value(numAddresses[index], value)){
+        return false;
+      }
+      logln(numAddresses[i], ": ", raw_to_c(value), " [", value , res ? "] (" : "]err (", t2 - t1, ")");
+    }
   }
   if(!measurements.commit()){
-	  return false;
+    return false;
   }
   return true;
 }
@@ -675,50 +701,50 @@ bool complete_measurement_routine(){
 
 //// TEST /////////////////
 
-int16_t random_raw_temperature(){
-  return random(120*128, 200*128);
-}
+// int16_t random_raw_temperature(){
+//   return random(120*128, 200*128);
+// }
 
-void fill_test_temperatures(){
-  measurements.clear();
-  measurements.set_value(1111, random_raw_temperature());
-  measurements.set_value(2222, random_raw_temperature());
-  measurements.set_value(3333, random_raw_temperature());
-  measurements.commit();
-  measurements.set_value(1111, random_raw_temperature());
-  measurements.set_value(2222, random_raw_temperature());
-  measurements.set_value(3333, random_raw_temperature());
-  measurements.commit();
-  measurements.set_value(1111, random_raw_temperature());
-  measurements.set_value(3333, random_raw_temperature());
-  measurements.set_value(4444, random_raw_temperature());
-  measurements.commit();
-}
-void test_routine(){
-  Serial.print("======= Testing =======");
-  fill_test_temperatures();
-  Serial.println("Generated temperatures:");
-  measurements.print();
+// void fill_test_temperatures(){
+//   measurements.clear();
+//   measurements.set_value(1111, random_raw_temperature());
+//   measurements.set_value(2222, random_raw_temperature());
+//   measurements.set_value(3333, random_raw_temperature());
+//   measurements.commit();
+//   measurements.set_value(1111, random_raw_temperature());
+//   measurements.set_value(2222, random_raw_temperature());
+//   measurements.set_value(3333, random_raw_temperature());
+//   measurements.commit();
+//   measurements.set_value(1111, random_raw_temperature());
+//   measurements.set_value(3333, random_raw_temperature());
+//   measurements.set_value(4444, random_raw_temperature());
+//   measurements.commit();
+// }
+// void test_routine(){
+//   Serial.print("======= Testing =======");
+//   fill_test_temperatures();
+//   Serial.println("Generated temperatures:");
+//   measurements.print();
   
-}
+// }
 
-void big_test_routine(uint64_t d_count, uint64_t m_count){
-  Serial.print("======= Testing ======= Generating Big test for\n Devices: ");
-  Serial.print(d_count);
-  Serial.print("\n Measurements: ");
-  Serial.println(m_count);
-  measurements.clear();
-  int16_t m = 10000;
-  for(size_t i=0; i<m_count; i++){
-    for(size_t j=0; j<d_count; j++){
-      //Serial.printf("(%u,%u)",i,j);
-      measurements.set_value(77700000 + j, ++m );
-    }
-    Serial.println(i);
-    measurements.commit();
-  }
-  Serial.println("DONE");
-}
+// void big_test_routine(uint64_t d_count, uint64_t m_count){
+//   Serial.print("======= Testing ======= Generating Big test for\n Devices: ");
+//   Serial.print(d_count);
+//   Serial.print("\n Measurements: ");
+//   Serial.println(m_count);
+//   measurements.clear();
+//   int16_t m = 10000;
+//   for(size_t i=0; i<m_count; i++){
+//     for(size_t j=0; j<d_count; j++){
+//       //Serial.printf("(%u,%u)",i,j);
+//       measurements.set_value(77700000 + j, ++m );
+//     }
+//     Serial.println(i);
+//     measurements.commit();
+//   }
+//   Serial.println("DONE");
+// }
 
 //// TELNET ///////////////////////////////////
 
@@ -891,7 +917,7 @@ bool handle_command(String& command){
     logln("Cleared payload");
   }else if(command == "clear"){
     measurements.clear();
-  }else if(command == "test"){
+  }/*else if(command == "test"){
     test_routine();
   }else if(command == "test0"){
     big_test_routine(Measurements::MAX_DEVICES, Measurements::MAX_MEASUREMENTS);
@@ -903,7 +929,7 @@ bool handle_command(String& command){
     big_test_routine(Measurements::MAX_DEVICES-1, Measurements::MAX_MEASUREMENTS);
   }else if(command == "test4"){
     big_test_routine(Measurements::MAX_DEVICES/2, Measurements::MAX_MEASUREMENTS/2);
-  }else if(command == "showconfig"){
+  }*/else if(command == "showconfig"){
     show_config();
   }else if(command == "reboot"){
     reboot_network();

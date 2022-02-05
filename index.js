@@ -498,7 +498,7 @@ function preapareNewLatestTemperatures(times, thermometer_ids, measurements){
         }
     }
     /**@type {{time: Date, id: (string | bigint), value: number}[]} */
-    const result = [];
+    let result = [];
     for(let i=0; i<thermometer_ids.length; i++){
         result.push({
             time: times[maxTimeIndex],
@@ -506,6 +506,7 @@ function preapareNewLatestTemperatures(times, thermometer_ids, measurements){
             value: measurements[maxTimeIndex * thermometer_ids.length + i]
         });
     }
+    result = result.filter(x => x.value != (-200*128));
     const buffer = convertTemperaturesResultToLastMeasurementsPacketBuffer(result);
     for(let clinet_ws of connected_clients){
         if(clinet_ws.session.device_id === 0){

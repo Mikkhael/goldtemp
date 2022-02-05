@@ -109,7 +109,10 @@ function Sth(site, next){fetch(site)
         document.getElementById('temp').innerHTML = "";
         document.getElementById('graphRecords').innerHTML = "";
         
-        for(let id in thermometers){
+        const thermometers_sorted = Object.entries(thermometers).sort((a,b) => getDeviceNameById(a[1].id) < getDeviceNameById(b[1].id) ? -1 : 1);
+        console.log('sdfsdf',thermometers_sorted);
+        for(let index in thermometers_sorted){
+            const id = thermometers_sorted[index][0];
             let div = addElement();
             div.querySelector(".TherName").innerHTML = getDeviceNameById(thermometers[id].id);
             div.querySelector(".Temp").innerHTML = `${pad_temperature(thermometers[id].value)}℃`;

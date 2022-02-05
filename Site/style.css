@@ -89,7 +89,23 @@ body{
         font-size: 1em;
     }
     .temp>*{
-        font-size: 0.6em;
+        font-size: 0.7em;
+        width: 100%;
+        flex-direction: row;
+        justify-content: space-around;
+    }
+
+    .TherName{
+        font-size: 1em;
+        width: 40%;
+        overflow-x: hidden;
+    }
+    .Temp{
+        font-size: 1.7em;
+    }
+    .Times{
+        font-size: 0.8em;
+        margin-left: none;
     }
 }
 

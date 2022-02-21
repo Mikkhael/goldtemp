@@ -80,12 +80,12 @@ function Sth(site, next){fetch(site)
         value_parts[0] = value_parts[0].padStart(3, ' ');
         if(value_parts.length == 1)
             value_parts[1] = "";
-        value_parts[1] = value_parts[1].padEnd(2, '0');
+        value_parts[1] = value_parts[1].padEnd(1, '0');
         return value_parts.join('.').replace(/ /g, '&nbsp;');
     }
     
     
-    let COLOR_COLD = [52, 213, 235];
+    let COLOR_COLD = [0, 13, 255];
     let COLOR_HOT  = [255, 0, 0];
     
     let TEMPERATURE_COLD = 20;
@@ -148,7 +148,7 @@ function Sth(site, next){fetch(site)
             }
             thermometers[ thermometer_ids[i] ] = {
                 time: timestamps[i],
-                value: Math.round(measurements[i] * 100) / 100,
+                value: Math.round(measurements[i] * 10) / 10,
                 id: thermometer_ids[i],
                 selected: thermometers[thermometer_ids[i]]?.selected || false
             };

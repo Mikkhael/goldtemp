@@ -11,8 +11,8 @@ void set_new_measurement_interval(const uint64_t);
 //// CONFIG /////////////////////
 
 constexpr int  MAX_DEVICES = 20;
-constexpr int  ONE_WIRE_BUSES_COUNT = 2;
-constexpr int  ONE_WIRE_BUSES_LIST[ONE_WIRE_BUSES_COUNT] = {D1, D2};
+constexpr int  ONE_WIRE_BUSES_COUNT = 3;
+constexpr int  ONE_WIRE_BUSES_LIST[ONE_WIRE_BUSES_COUNT] = {D1, D2, D3};
 
 struct Config{
   char CRED_SSID[32] = "TP-LINK_FD2F53";
@@ -30,6 +30,7 @@ const int WS_Reconnect_Interval = 5000;
 
 // Heroku Config
 // cfg3goldtemp.herokuapp.com,480
+// cfg1GOLD CLUB WiFi,2cokolwiek,3goldtemp.herokuapp.com,480
 
 // Laptop Config
 // cfg1Gold-Laptop,2qwertyui,3192.168.137.1,48080
@@ -255,16 +256,18 @@ void net_status_update(bool force = false){
 OneWire oneWireList[ONE_WIRE_BUSES_COUNT] = {
   OneWire(ONE_WIRE_BUSES_LIST[0]),
   OneWire(ONE_WIRE_BUSES_LIST[1]),
+  OneWire(ONE_WIRE_BUSES_LIST[2]),
 };
 DallasTemperature sensorsList[ONE_WIRE_BUSES_COUNT] = {
   DallasTemperature(&oneWireList[0]),
   DallasTemperature(&oneWireList[1]),
+  DallasTemperature(&oneWireList[2]),
 };
 
 DeviceAddress addresses[MAX_DEVICES] {};
 uint64_t numAddresses[MAX_DEVICES] {};
 uint8_t numberOfDevices = 0;
-uint8_t numberOfDevicesPerBus[ONE_WIRE_BUSES_COUNT] = {0,0};
+uint8_t numberOfDevicesPerBus[ONE_WIRE_BUSES_COUNT] = {0,0,0};
 
 void printAddress(DeviceAddress deviceAddress, char* destination)
 {
@@ -646,12 +649,14 @@ void request_temperatures(){
   //const auto t1 = millis();
   for(auto& sensors : sensorsList){
     sensors.requestTemperatures();
+    delay(200);
   }
   //const auto t2 = millis();
   //logln("Measurement took ", t2-t1, " millis.");
 }
 
 bool getTemperature(DeviceAddress deviceAddress, int busIndex, int16_t& result){
+  delay(20);
   result = sensorsList[busIndex].getTemp(deviceAddress);
   if(result == DEVICE_DISCONNECTED_RAW)
     return false;
@@ -863,7 +868,7 @@ IntervalExecution net_update_interval([]{
   net_status_update();
   //logln(millis());
   if(WiFi.status() != WL_CONNECTED){
-    logln("Reconnecting to wifi...");
+    logln(".");
     wait_for_wifi_to_connect(2);
   }
 }, 200);

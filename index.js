@@ -16,7 +16,7 @@ function raw_to_c(raw){ return raw / 128; }
 
 // MYSQL
 
-const DBManager = require("./DBManager");
+const DBManager = require("./DBManager_SQLite");
 const db = new DBManager();
 db.connect();
 
@@ -643,22 +643,23 @@ const sleepingManager = new SleepingManager();
 
 
 function refresh_sleeping_config(){
-    db.get_sleep_config((err, result) => {
-        if(err){
-            console.error("Error while getting sleep config from database: ", err);
-            return;
-        }
+    return;
+    // db.get_sleep_config((err, result) => {
+    //     if(err){
+    //         console.error("Error while getting sleep config from database: ", err);
+    //         return;
+    //     }
         
-        if(result.length < 1){
-            console.error("No Sleep Config present in the Database");
-            result[0] = {};
-        }
+    //     if(result.length < 1){
+    //         console.error("No Sleep Config present in the Database");
+    //         result[0] = {};
+    //     }
         
-        sleepingManager.set_sleep_time(
-            result[0].sleep_start_minutes || 0,
-            result[0].sleep_duration_minutes || 0
-        );
-    });
+    //     sleepingManager.set_sleep_time(
+    //         result[0].sleep_start_minutes || 0,
+    //         result[0].sleep_duration_minutes || 0
+    //     );
+    // });
 }
 
 /**
@@ -673,10 +674,10 @@ function handleSetSleepingTime(ws, payload){
     
     const start_minutes = payload.readUInt16LE(1);
     const duration_minutes = payload.readUInt16LE(3);
-    db.set_sleep_config(start_minutes, duration_minutes, function(err){
-        sleepingManager.set_sleep_time(start_minutes, duration_minutes);
-        console.log(`Set Sleep Time Config to: ${Math.round(start_minutes/60)}:${start_minutes%60} UTC/${Math.round(duration_minutes/60)}:${duration_minutes%60}`);
-    });
+    // db.set_sleep_config(start_minutes, duration_minutes, function(err){
+    //     sleepingManager.set_sleep_time(start_minutes, duration_minutes);
+    //     console.log(`Set Sleep Time Config to: ${Math.round(start_minutes/60)}:${start_minutes%60} UTC/${Math.round(duration_minutes/60)}:${duration_minutes%60}`);
+    // });
 }
 
 /**
@@ -729,11 +730,11 @@ function responsdWithSleepRequestIfNessesary(ws){
  * @param {Buffer} payload
  */
 function handleGetThermometerNameRequest(ws, payload){
-    db.get_thermometers_names((err, result) => {
+    db.get_thermometers_names((err, rows) => {
         if(!err){
             const data = {};
-            for(const record of result){
-                data[record.device_id.toString()] = record.device_name;
+            for(const record of rows){
+                data[record.thermometer_id.toString()] = record.thermometer_name;
             }
             ws.send(JSON.stringify({type:"names", data}), err => {
                 if(err){
@@ -758,20 +759,20 @@ function handleGetMeasurementsSince(ws, payload){
     const from = payload.readBigUInt64LE(1+8);
     const to = payload.readBigUInt64LE(1+8+8);
 
-    db.get_measurements_since(id, from, to, (err, result) => {
+    db.get_measurements_since(id, from, to, (err, rows) => {
         if(err){
             return;
         }
-        const count = result.length;
+        const count = rows.length;
         const buffer = Buffer.allocUnsafe(1 + 8 + 4 + count*(8+2));
         buffer.writeUInt8(RequestTypes.GetMeasurementsSinceResponse, 0);
         buffer.writeBigUInt64LE(id, 1);
         buffer.writeUInt32LE(count, 1+8);
         for(let i = 0; i<count; i++){
-            buffer.writeBigUInt64LE(BigInt(result[i].time),  1+8+4+(i*8));
+            buffer.writeBigUInt64LE(BigInt(rows[i].time),  1+8+4+(i*8));
         }
         for(let i = 0; i<count; i++){
-            buffer.writeInt16LE(result[i].value, 1+8+4+(count*8)+(i*2));
+            buffer.writeInt16LE(rows[i].value, 1+8+4+(count*8)+(i*2));
         }
 
         ws.send(buffer);

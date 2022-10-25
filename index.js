@@ -479,6 +479,10 @@ function handlePostNewTemperatures(ws, data){
         
     const times = measurements_timestamps.map(x => x === 0n ? new Date() : new Date(Number(x)*1000));
     db.insert_new_measurements(times, thermometers_ids, measurements);
+
+    if(process.env["IMM_SLEEP"] !== undefined && +process.env["IMM_SLEEP"] > 0){
+        respondWithSleepRequest(ws, +process.env["IMM_SLEEP"]);
+    }
     
     preapareNewLatestTemperatures(times, thermometers_ids, measurements);
 }
@@ -710,6 +714,14 @@ function responsdWithSleepRequestIfNessesary(ws){
         return;
     }
     const sleep_duration_ms = sleepingManager.get_remaining_duration_ms();
+    respondWithSleepRequest(ws, sleep_duration_ms);
+}
+
+/**
+ * @param {WebSocketWithSession} ws 
+ * @param {number} sleep_duration_ms 
+ */
+function respondWithSleepRequest(ws, sleep_duration_ms){
     if(sleep_duration_ms > 0){
         const buffer = Buffer.allocUnsafe(1+8);
         buffer.writeUInt8(RequestTypes.StartSleeping, 0);

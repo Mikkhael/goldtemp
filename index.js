@@ -312,6 +312,7 @@ const RequestTypes = {
     GetLastMeasurements: 20,
     SetSampleFrequency: 30,
     GetCurrentTimestamp: 40,
+    UpdateAllTimestamps: 45,
     GetLogsRequest: 50,
     GetLogsResponse: 51,
     GetConfigRequest: 60,
@@ -361,6 +362,10 @@ function handleMessage(ws, data, isBinary){
         }
         case RequestTypes.GetCurrentTimestamp: {
             handleGetCurrentTimestamp(ws);
+            break;
+        }
+        case RequestTypes.UpdateAllTimestamps: {
+            updateAllCurrentTimestamps();
             break;
         }
         case RequestTypes.GetLogsRequest: {
@@ -478,13 +483,17 @@ function handlePostNewTemperatures(ws, data){
     }
         
     const times = measurements_timestamps.map(x => x === 0n ? new Date() : new Date(Number(x)*1000));
-    db.insert_new_measurements(times, thermometers_ids, measurements);
+      console.log("Inserting...");
+    db.insert_new_measurements(times, thermometers_ids, measurements, (err) => {
+      console.log("Inserted");
+      if(process.env["IMM_SLEEP"] !== undefined && +process.env["IMM_SLEEP"] > 0){
+          respondWithSleepRequest(ws, +process.env["IMM_SLEEP"]);
+      }
+      preapareNewLatestTemperatures(times, thermometers_ids, measurements);
+      //db.disconnect();
+    });
 
-    if(process.env["IMM_SLEEP"] !== undefined && +process.env["IMM_SLEEP"] > 0){
-        respondWithSleepRequest(ws, +process.env["IMM_SLEEP"]);
-    }
     
-    preapareNewLatestTemperatures(times, thermometers_ids, measurements);
 }
 function invalidPostNewTemperatureRequest(ws, data, reason){
     console.error(`Invalid Post New Request Temperature Request: `, reason);
@@ -579,6 +588,21 @@ function handleGetCurrentTimestamp(ws){
             console.error(`Error while sending Get Current Timestamp Resposne: `, err);
         }
     });
+}
+
+function updateAllCurrentTimestamps(){
+    const timestamp = BigInt(Date.now())/1000n;
+    const buffer = Buffer.allocUnsafe(9);
+    buffer.writeUInt8(RequestTypes.GetCurrentTimestamp, 0);
+    buffer.writeBigUInt64LE(timestamp, 1);
+    console.log(`Updating with current timestamp of: `, timestamp);
+    for(let ws of connected_clients){
+      ws.send(buffer, err => {
+          if(err){
+              console.error(`Error while sending Get Current Timestamp Resposne (Forced Update): `, err);
+          }
+      });
+    }
 }
 
 /**
@@ -844,8 +868,12 @@ wss.on('connection', function(/**@type {WebSocketWithSession} */ws, req) {
 
 sleepingManager.set_sleep_time( 21*60 + 41 + new Date().getTimezoneOffset(), 1 );
 
+const RAND = Math.floor(Math.random() * 10000);
+
 server.listen(PORT, () => {
     console.log("App listening on port: ", PORT);
     console.log("DEBUG_MODE: ", DEBUG);
     refresh_sleeping_config();
+  
+    setInterval( () => {console.log(`Connected WS: ${connected_clients.length}`, RAND);}, 1000 * 60 );
 });

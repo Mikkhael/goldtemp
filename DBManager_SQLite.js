@@ -48,6 +48,7 @@ class DBManager{
             }else{
                 this.setup(next);
             }
+            console.log("SQLite Connected.");
         });
     }
     reconnect(next = function(err){}){
@@ -62,7 +63,7 @@ class DBManager{
         if(this.is_connected()){
             return true;
         }
-        this.connect(function(err){
+        this.connect({}, function(err){
             if(err){
                 nextErr(err);
             }else{
@@ -71,7 +72,16 @@ class DBManager{
         });
         return false;
     }
-
+    disconnect(next = function(err){}){
+      this.connection.close((err) => {
+        if(err){
+          console.log("Error closing the database: ", err);
+        }
+        this.connection = null;
+        console.log("Disconnected SQLite.");
+        next(err);
+      });
+    }
     
     /**
      * 

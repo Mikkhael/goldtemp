@@ -132,14 +132,14 @@ class DBManager{
                 return;
             }
             //@ts-ignore
-            this.connection.run(`DELETE FROM measurements WHERE (julianday(datetime('now', '-${DB_CRED.PAST} days')) > julianday(time))`, function(err){
+            this.connection.run(`DELETE FROM measurements WHERE (julianday(datetime('now', '-${DB_CRED.PAST} days')) > julianday(time))`, (err) => {
                 if(err){
                     console.error("Error while performing deletion: ", err);
                     next(err);
                     return;
                 }
                 //@ts-ignore
-                this.connection.run(`DELETE FROM \`measurements\` WHERE (julianday(datetime('now')) < julianday(time));`, function(err){
+                this.connection.run(`DELETE FROM \`measurements\` WHERE (julianday(datetime('now')) < julianday(time));`, (err) => {
                     if(err){
                         console.error("Error while performing deletion of newer: ", err);
                     }

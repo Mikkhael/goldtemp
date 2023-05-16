@@ -350,6 +350,7 @@ function handleMessage(ws, data, isBinary){
         }
         case RequestTypes.PostNewTemperatures: {
             handlePostNewTemperatures(ws, data.slice(1));
+            updateAllCurrentTimestamps();
             break;
         }
         case RequestTypes.GetLastMeasurements: {

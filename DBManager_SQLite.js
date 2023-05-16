@@ -135,8 +135,17 @@ class DBManager{
             this.connection.run(`DELETE FROM measurements WHERE (julianday(datetime('now', '-${DB_CRED.PAST} days')) > julianday(time))`, function(err){
                 if(err){
                     console.error("Error while performing deletion: ", err);
+                    next(err);
+                    return;
                 }
-                next(err, rows);
+                //@ts-ignore
+                this.connection.run(`DELETE FROM \`measurements\` WHERE (julianday(datetime('now')) < julianday(time));`, function(err){
+                    if(err){
+                        console.error("Error while performing deletion of newer: ", err);
+                    }
+                    next(err, rows);
+                    return;
+                });
             });
 
         });

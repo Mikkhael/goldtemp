@@ -1,0 +1,25 @@
+CREATE TABLE `measurements` (
+    `id` integer NOT NULL PRIMARY KEY AUTOINCREMENT,
+    `thermometer_id` text NOT NULL,
+    `time` datetime NOT NULL,
+    `value` integer NOT NULL
+);
+CREATE TABLE `names` (
+    `thermometer_id` text NOT NULL PRIMARY KEY,
+    `thermometer_name` text NOT NULL
+);
+
+rowid|thermometer_id|thermometer_name
+1|18403592002045502208|Pompa 9kW
+2|18433986901493884928|Pompa 16kW
+3|18411473301405608960|Dwór
+4|16005944031427236864|Piętro 1 - Basia - Góra
+5|12092025684172583680|Piętro 1 - Basia - Dół
+6|1094322251257440256|Piętro 2 - Ilona - Góra
+7|521134749364856576|Piętro 2 - Ilona - Dół
+8|17932356573011739136|Piętro 2 - Iza - Dół
+9|5519030824118375680|Piętro 2 - Iza - Góra
+10|18419633876706922752|Parter - Gold - Dół
+11|18423300747977104896|Parter - Gold - Góra
+12|18429328119327024896|Parter - Hela - Góra
+13|18420200125184710912|Parter - Hela - Dół

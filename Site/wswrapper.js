@@ -140,7 +140,7 @@ function getDeviceNameById(id){
 
 function getDefaultSocketAddress(){
     const is_https = location.protocol === 'https:';
-    return `${is_https ? 'wss' : 'ws'}://${location.host}`;
+    return `${is_https ? 'wss' : 'ws'}://${location.host}${location.pathname}`;
 }
 
 

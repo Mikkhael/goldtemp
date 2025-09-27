@@ -132,7 +132,7 @@ class DBManager{
                 return;
             }
             //@ts-ignore
-            this.connection.run(`DELETE FROM measurements WHERE (julianday(datetime('now', '-${DB_CRED.PAST} days')) > julianday(time))`, (err) => {
+            this.connection.run(`DELETE FROM measurements WHERE (julianday(datetime('now', '-${DB_CRED.PAST} days')) > julianday(time)) AND (rowid NOT IN ( SELECT rowid FROM measurements GROUP BY thermometer_id HAVING max(time) ))`, (err) => {
                 if(err){
                     console.error("Error while performing deletion: ", err);
                     next(err);

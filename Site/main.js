@@ -109,29 +109,91 @@ function Sth(site, next){fetch(site)
         document.getElementById('temp').innerHTML = "";
         document.getElementById('graphRecords').innerHTML = "";
         
-        const thermometers_sorted = Object.entries(thermometers).sort((a,b) => getDeviceNameById(a[1].id) < getDeviceNameById(b[1].id) ? -1 : 1);
-        console.log('sdfsdf',thermometers_sorted);
-        for(let index in thermometers_sorted){
-            const id = thermometers_sorted[index][0];
+
+        const EXPECTED_LAYOYOUT = [
+            ["18411473301405608960", "Dwór"],
+            ["", ""],
+            ["18419633876706922752", "Parter - Gold - Dół"],
+            ["18423300747977104896", "Parter - Gold - Góra"],
+            ["18420200125184710912", "Parter - Hela - Dół"],
+            ["18429328119327024896", "Parter - Hela - Góra"],
+            ["12092025684172583680", "Piętro 1 - Basia - Dół"],
+            ["16005944031427236864", "Piętro 1 - Basia - Góra"],
+            ["521134749364856576",   "Piętro 2 - Ilona - Dół"],
+            ["1094322251257440256",  "Piętro 2 - Ilona - Góra"],
+            ["17932356573011739136", "Piętro 2 - Iza - Dół"],
+            ["5519030824118375680",  "Piętro 2 - Iza - Góra"],
+            ["18433986901493884928", "Pompa 16kW"],
+            ["18403592002045502208", "Pompa 9kW"],
+        ];
+
+        // const thermometers_sorted = Object.entries(thermometers).sort((a,b) => getDeviceNameById(a[1].id) < getDeviceNameById(b[1].id) ? -1 : 1);
+
+        const thermometers_to_sort =Object.entries(thermometers);
+        const thermometers_to_display = [];
+
+        function thermometer_to_display_converter(x) {
+            return {
+                id:    x.id.toString(),
+                name:  getDeviceNameById(x.id),
+                temp:  `${pad_temperature(x.value)}℃`,
+                color: get_temp_color_rgb(x.value),
+                date:  `${fmt.format(new Date(Number(x.time)))}`,
+                selected: x.selected,
+                real: true,
+            };
+        }
+
+        let fmt = new Intl.DateTimeFormat([], {dateStyle: "short", timeStyle: 'medium'});
+        for(const expected of EXPECTED_LAYOYOUT) {
+            let index_in_to_sort = thermometers_to_sort.findIndex(x => x[0] == expected[0]);
+            if(index_in_to_sort != -1) {
+                let thermometer_to_sort = thermometers_to_sort[index_in_to_sort][1];
+                thermometers_to_sort.splice(index_in_to_sort, 1);
+                thermometers_to_display.push(thermometer_to_display_converter(thermometer_to_sort));
+                
+            } else if (expected[0] !== "") {
+                thermometers_to_display.push({
+                    id:    expected[0],
+                    name:  expected[1],
+                    temp:  `???`,
+                    color: 'black',
+                    date:  '---',
+                    selected: false,
+                    real: false,
+                });
+            } else {
+                thermometers_to_display.push({
+                    id:    "",
+                    name:  "",
+                    temp:  "",
+                    color: 'black',
+                    date:  "",
+                    selected: false,
+                    real: false,
+                });
+            }
+        }
+        thermometers_to_display.push(...thermometers_to_sort.map(thermometer_to_display_converter));
+
+        console.log('sdfsdf',thermometers_to_display);
+        for(let data of thermometers_to_display){
             let div = addElement();
-            div.querySelector(".TherName").innerHTML = getDeviceNameById(thermometers[id].id);
-            div.querySelector(".Temp").innerHTML = `${pad_temperature(thermometers[id].value)}℃`;
-            //@ts-expect-error
-            div.querySelector(".Temp").style.color = get_temp_color_rgb(thermometers[id].value);
-            
-            let fmt = new Intl.DateTimeFormat([], {dateStyle: "short", timeStyle: 'medium'});
-            let date = new Date(Number(thermometers[id].time));
-            
-            div.querySelector(".Times").innerHTML = `${fmt.format(date)}`;
+            div.querySelector(".TherName").innerHTML = data.name;
+            div.querySelector(".Temp").innerHTML     = data.temp;
+            div.querySelector(".Temp").style.color   = data.color;           
+            div.querySelector(".Times").innerHTML    = data.date;
             document.getElementById('temp').appendChild(div);
             
-            div = addGraphThermometerElement();
-            div.querySelector(".GraphRecordThermometer").innerHTML = getDeviceNameById(thermometers[id].id);
-            div.setAttribute("device_id", thermometers[id].id);
-            div.onclick = () => {clickedRecord(div, thermometers[id].id)};
-            div.setAttribute("is_selected", thermometers[id].selected ? "1" : "0");
+            if(data.real) {
+                div = addGraphThermometerElement();
+                div.querySelector(".GraphRecordThermometer").innerHTML = data.name;
+                div.setAttribute("device_id", data.id);
+                div.onclick = () => {clickedRecord(div, data.id)};
+                div.setAttribute("is_selected", data.selected ? "1" : "0");
+                document.getElementById('graphRecords').appendChild(div);
+            }
             
-            document.getElementById('graphRecords').appendChild(div);
         }
     }
     
